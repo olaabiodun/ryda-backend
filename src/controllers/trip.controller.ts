@@ -100,29 +100,28 @@ class TripController {
         if (trip && trip.status !== 'COMPLETED') {
           const isCash = (trip as any).paymentMethod === 'cash';
 
-          await prisma.$transaction([
-            // Passenger updates
-            prisma.user.update({
-              where: { id: trip.passengerId },
-              data: { 
-                walletBalance: isCash ? undefined : { decrement: trip.fare },
-                rides: { increment: 1 }
-              }
-            }),
-            // Driver updates
-            prisma.user.update({
-              where: { id: trip.driverId! },
-              data: { 
-                walletBalance: isCash ? undefined : { increment: trip.fare * 0.8 },
-                rides: { increment: 1 }
-              }
-            }),
-            // Finalize status
-            prisma.trip.update({
-              where: { id },
-              data: { status }
-            })
-          ]);
+          // Run updates sequentially instead of in a transaction to support MongoDB Atlas shared tier
+          // 1. Passenger updates
+          await prisma.user.update({
+            where: { id: trip.passengerId },
+            data: { 
+              walletBalance: isCash ? undefined : { decrement: trip.fare },
+              rides: { increment: 1 }
+            }
+          });
+          // 2. Driver updates
+          await prisma.user.update({
+            where: { id: trip.driverId! },
+            data: { 
+              walletBalance: isCash ? undefined : { increment: trip.fare * 0.8 },
+              rides: { increment: 1 }
+            }
+          });
+          // 3. Finalize status
+          await prisma.trip.update({
+            where: { id },
+            data: { status }
+          });
           return res.json({ ...trip, status: 'COMPLETED' });
         }
       }

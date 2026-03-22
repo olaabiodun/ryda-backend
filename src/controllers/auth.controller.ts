@@ -12,17 +12,24 @@ class AuthController {
       const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-      await prisma.oTP.upsert({
-        where: { phone },
-        update: { code, expiresAt },
-        create: { phone, code, expiresAt }
-      });
+      // Manual upsert to avoid transaction errors on MongoDB
+      const existingOtp = await prisma.oTP.findUnique({ where: { phone } });
+      if (existingOtp) {
+        await prisma.oTP.update({
+          where: { phone },
+          data: { code, expiresAt }
+        });
+      } else {
+        await prisma.oTP.create({
+          data: { phone, code, expiresAt }
+        });
+      }
 
       console.log(`\n---------------------------------`);
       console.log(`🔑 OTP for ${phone}: ${code}`);
       console.log(`---------------------------------\n`);
 
-      res.json({ message: 'OTP sent successfully' });
+      res.json({ message: 'OTP sent successfully', code });
     } catch (error) {
       console.error('Request OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
