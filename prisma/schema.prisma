@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String           @id @default(auto()) @map("_id") @db.ObjectId
+  first_name       String
+  middle_name      String?
+  last_name        String
+  email            String?          @unique
+  phone            String           @unique
+  password         String?
+  avatar           String?
+  role             String           @default("PASSENGER")
+  rating           Float            @default(4.9)
+  walletBalance    Float            @default(0.0)
+  tier             String           @default("Bronze")
+  rides            Int              @default(0)
+  ryda_points      Int              @default(0)
+  isOnline         Boolean          @default(false)
+  lastLocationLat  Float?
+  lastLocationLng  Float?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  transactions     Transaction[]
+  tripsAsDriver    Trip[]           @relation("DriverTrips")
+  tripsAsPassenger Trip[]           @relation("PassengerTrips")
+  contacts         TrustedContact[]
+}
+
+model OTP {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  phone     String   @unique
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Trip {
+  id                String        @id @default(auto()) @map("_id") @db.ObjectId
+  passengerId       String        @db.ObjectId
+  driverId          String?       @db.ObjectId
+  originAddress     String
+  originLat         Float
+  originLng         Float
+  destAddress       String
+  destLat           Float
+  destLng           Float
+  status            String        @default("REQUESTED")
+  fare              Float
+  distance          Float
+  duration          Int?
+  paymentMethod     String        @default("wallet")
+  ratingByPassenger Int?
+  ratingByDriver    Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  messages          ChatMessage[]
+  driver            User?         @relation("DriverTrips", fields: [driverId], references: [id])
+  passenger         User          @relation("PassengerTrips", fields: [passengerId], references: [id])
+}
+
+model Transaction {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  type      String
+  amount    Float
+  label     String
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model TrustedContact {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  name      String
+  phone     String
+  relation  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model ChatMessage {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  tripId     String?  @db.ObjectId
+  senderId   String
+  receiverId String
+  content    String
+  createdAt  DateTime @default(now())
+  trip       Trip?    @relation(fields: [tripId], references: [id])
+}
