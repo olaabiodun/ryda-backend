@@ -31,6 +31,7 @@ model User {
   tripsAsDriver    Trip[]           @relation("DriverTrips")
   tripsAsPassenger Trip[]           @relation("PassengerTrips")
   contacts         TrustedContact[]
+  pointsHistory    PointsHistory[]
 }
 
 model OTP {
@@ -95,4 +96,21 @@ model ChatMessage {
   content    String
   createdAt  DateTime @default(now())
   trip       Trip?    @relation(fields: [tripId], references: [id])
+}
+model PointsHistory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  label     String
+  points    String   // e.g. "+42" or "-800"
+  date      DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model RedeemableReward {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String
+  desc      String
+  points    Int
+  icon      String
+  active    Boolean  @default(true)
 }

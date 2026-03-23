@@ -52,6 +52,29 @@ class UserController {
       res.json({ message: 'Contact deleted successfully' });
     } catch (error) {
       console.error('Delete contact error ❌', error);
+    }
+  }
+
+  async updateProfile(req: Request, res: Response) {
+    try {
+      // @ts-ignore
+      const userId = req.user.id;
+      const { first_name, last_name, email, phone, avatar } = req.body;
+
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(first_name && { first_name }),
+          ...(last_name && { last_name }),
+          ...(email && { email }),
+          ...(phone && { phone }),
+          ...(avatar && { avatar }),
+        }
+      });
+
+      res.json(user);
+    } catch (error) {
+      console.error('Update profile error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
