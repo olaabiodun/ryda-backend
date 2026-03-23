@@ -42,7 +42,7 @@ export const configureTripSockets = (io: Server) => {
           include: { passenger: true }
         });
         if (trip) {
-          socket.to('drivers').emit('new_trip_request', trip);
+          io.to('drivers').emit('new_trip_request', trip);
         }
       } catch (error) {
         console.error('Error fetching trip for broadcast', error);
