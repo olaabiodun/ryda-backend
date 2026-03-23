@@ -64,6 +64,20 @@ class TripController {
     }
   }
 
+  async getAvailableTrips(req: Request, res: Response) {
+    try {
+      const trips = await prisma.trip.findMany({
+        where: { status: 'REQUESTED', driverId: null },
+        include: { passenger: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json(trips);
+    } catch (error) {
+      console.error('Get available trips error ❌', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
   async getTripDetails(req: Request, res: Response) {
     try {
       const { id } = req.params;
