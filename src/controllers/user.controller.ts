@@ -112,7 +112,7 @@ class UserController {
         where: { id: userId },
         data: {
           vehicles: {
-            push: newVehicle
+            set: [...(existing?.vehicles || []), newVehicle]
           }
         }
       });

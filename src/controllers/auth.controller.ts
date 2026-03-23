@@ -242,7 +242,7 @@ class AuthController {
       const userId = req.user.id;
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true }
+        select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true }
       });
 
       if (!user) {
