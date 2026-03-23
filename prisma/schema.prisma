@@ -7,6 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+type Vehicle {
+  make         String
+  model        String
+  year         String
+  plateNumber  String
+  color        String
+  type         String   // SEDAN | SUV | LUXURY | VAN
+  seats        Int      @default(4)
+  fuelType     String   // PETROL | DIESEL | ELECTRIC | HYBRID
+  transmission String   // AUTOMATIC | MANUAL
+}
+
 model User {
   id               String           @id @default(auto()) @map("_id") @db.ObjectId
   first_name       String
@@ -25,6 +37,7 @@ model User {
   isOnline         Boolean          @default(false)
   lastLocationLat  Float?
   lastLocationLng  Float?
+  vehicles         Vehicle[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   transactions     Transaction[]
@@ -32,6 +45,7 @@ model User {
   tripsAsPassenger Trip[]           @relation("PassengerTrips")
   contacts         TrustedContact[]
   pointsHistory    PointsHistory[]
+  notifications    Notification[]
 }
 
 model OTP {
@@ -113,4 +127,14 @@ model RedeemableReward {
   points    Int
   icon      String
   active    Boolean  @default(true)
+}
+model Notification {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  title     String
+  message   String
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
 }
