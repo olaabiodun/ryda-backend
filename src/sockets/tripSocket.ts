@@ -61,8 +61,9 @@ export const configureTripSockets = (io: Server) => {
           include: { passenger: true, driver: true }
         });
 
-        // Notify passenger via the trip room
+        // Notify passenger via both trip room and personal room
         io.to(tripId).emit('trip_accepted', trip);
+        io.to(trip.passengerId).emit('trip_accepted', trip);
         console.log(`Trip ${tripId} accepted by driver ${driverId}`);
       } catch (error) {
         console.error('Accept trip error', error);
@@ -75,8 +76,9 @@ export const configureTripSockets = (io: Server) => {
         const trip = await prisma.trip.findUnique({ where: { id: tripId } });
         if (trip) {
             await prisma.trip.update({ where: { id: tripId }, data: { status } });
-            // Consistent pattern: emit to the specific tripId room for transparency
+            // Consistent pattern: emit to both trip room and passenger room for fast UI updates
             io.to(tripId).emit('status_updated', { tripId, status });
+            io.to(trip.passengerId).emit('status_updated', { tripId, status });
         }
     });
 
