@@ -11,5 +11,6 @@ router.get('/available', authMiddleware, tripController.getAvailableTrips);
 router.get('/:id', authMiddleware, tripController.getTripDetails);
 router.patch('/:id/status', authMiddleware, tripController.updateTripStatus);
 router.patch('/:id/confirm-arrival', authMiddleware, tripController.confirmArrival);
+router.patch('/:id/rate', authMiddleware, tripController.rateTrip);
 
 export default router;

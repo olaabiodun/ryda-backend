@@ -168,7 +168,7 @@ class TripController {
         }
       }
 
-      // Generate PIN if ride is being accepted
+      // Generate PIN ONLY if ride is being accepted for the first time
       const pin = status === 'ACCEPTED' ? Math.floor(1000 + Math.random() * 9000).toString() : undefined;
 
       const trip = await prisma.trip.update({
@@ -176,7 +176,7 @@ class TripController {
         data: {
           status,
           driverId: driverId || undefined,
-          pin: pin
+          ...(pin && { pin }) // Only update PIN field if we generated one
         },
         include: { passenger: true, driver: true }
       });
@@ -213,6 +213,51 @@ class TripController {
       res.json(trip);
     } catch (error) {
       console.error('Confirm arrival error ❌', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async rateTrip(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { rating, comment, role } = req.body;
+      
+      const updateData = role === 'DRIVER' ? { ratingByDriver: rating } : { ratingByPassenger: rating };
+      
+      const trip = await prisma.trip.update({
+        where: { id },
+        data: updateData,
+        include: { passenger: true, driver: true }
+      });
+
+      // Update average rating for the target user
+      const targetUserId = role === 'DRIVER' ? trip.passengerId : trip.driverId;
+      if (targetUserId) {
+        const allRatings = await prisma.trip.findMany({
+          where: {
+            OR: [
+              { passengerId: targetUserId, ratingByDriver: { not: null } },
+              { driverId: targetUserId, ratingByPassenger: { not: null } }
+            ]
+          },
+          select: { ratingByDriver: true, ratingByPassenger: true, passengerId: true }
+        });
+
+        const sum = allRatings.reduce((acc, t) => {
+          const r = t.passengerId === targetUserId ? t.ratingByDriver : t.ratingByPassenger;
+          return acc + (r || 5);
+        }, 0);
+        const avg = sum / (allRatings.length || 1);
+
+        await prisma.user.update({
+          where: { id: targetUserId },
+          data: { rating: parseFloat(avg.toFixed(1)) }
+        });
+      }
+
+      res.json(trip);
+    } catch (error) {
+      console.error('Rate trip error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }

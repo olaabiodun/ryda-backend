@@ -54,9 +54,10 @@ export const configureTripSockets = (io: Server) => {
       const { tripId, driverId } = data;
       
       try {
+        const pin = Math.floor(1000 + Math.random() * 9000).toString();
         const trip = await prisma.trip.update({
           where: { id: tripId },
-          data: { driverId, status: 'ACCEPTED' },
+          data: { driverId, status: 'ACCEPTED', pin },
           include: { passenger: true, driver: true }
         });
 

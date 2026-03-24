@@ -96,7 +96,7 @@ class AuthController {
         }
       });
 
-      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
 
       await prisma.oTP.delete({ where: { phone } }).catch(() => {});
 
