@@ -75,10 +75,14 @@ export const configureTripSockets = (io: Server) => {
         const { tripId, status } = data;
         const trip = await prisma.trip.findUnique({ where: { id: tripId } });
         if (trip) {
-            await prisma.trip.update({ where: { id: tripId }, data: { status } });
-            // Consistent pattern: emit to both trip room and passenger room for fast UI updates
-            io.to(tripId).emit('status_updated', { tripId, status });
-            io.to(trip.passengerId).emit('status_updated', { tripId, status });
+            const updatedTrip = await prisma.trip.update({ 
+                where: { id: tripId }, 
+                data: { status },
+                include: { passenger: true, driver: true }
+            });
+            // Consistent pattern: emit full trip data back for all listeners
+            io.to(tripId).emit('status_updated', updatedTrip);
+            io.to(updatedTrip.passengerId).emit('status_updated', updatedTrip);
         }
     });
 

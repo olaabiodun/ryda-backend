@@ -181,11 +181,11 @@ class TripController {
         include: { passenger: true, driver: true }
       });
 
-      // Notify passenger and trip room of status change
+      // Notify passenger and trip room of status change (include full trip data)
       const io = req.app.get('io');
       if (io && trip.passengerId) {
-        io.to(trip.passengerId).emit('status_updated', { tripId: trip.id, status });
-        io.to(trip.id).emit('status_updated', { tripId: trip.id, status });
+        io.to(trip.passengerId).emit('status_updated', trip);
+        io.to(trip.id).emit('status_updated', trip);
       }
 
       res.json(trip);
