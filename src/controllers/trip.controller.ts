@@ -168,11 +168,15 @@ class TripController {
         }
       }
 
+      // Generate PIN if ride is being accepted
+      const pin = status === 'ACCEPTED' ? Math.floor(1000 + Math.random() * 9000).toString() : undefined;
+
       const trip = await prisma.trip.update({
         where: { id },
         data: {
           status,
-          driverId: driverId || undefined
+          driverId: driverId || undefined,
+          pin: pin
         },
         include: { passenger: true, driver: true }
       });
@@ -186,6 +190,29 @@ class TripController {
       res.json(trip);
     } catch (error) {
       console.error('Update trip status error ❌', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async confirmArrival(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const trip = await prisma.trip.update({
+        where: { id },
+        data: { isConfirmedByPassenger: true },
+        include: { passenger: true, driver: true }
+      });
+      
+      const io = req.app.get('io');
+      if (io && trip.driverId) {
+        io.to(trip.driverId).emit('arrival_confirmed', { tripId: trip.id });
+        // Also emit status update to sync both
+        io.to(trip.passengerId).emit('status_updated', { tripId: trip.id, isConfirmedByPassenger: true });
+      }
+
+      res.json(trip);
+    } catch (error) {
+      console.error('Confirm arrival error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }

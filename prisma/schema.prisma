@@ -71,6 +71,8 @@ model Trip {
   distance          Float
   duration          Int?
   paymentMethod     String        @default("wallet")
+  pin               String?
+  isConfirmedByPassenger Boolean  @default(false)
   ratingByPassenger Int?
   ratingByDriver    Int?
   createdAt         DateTime      @default(now())
