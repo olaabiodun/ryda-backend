@@ -206,8 +206,8 @@ class TripController {
       const io = req.app.get('io');
       if (io && trip.driverId) {
         io.to(trip.driverId).emit('arrival_confirmed', { tripId: trip.id });
-        // Also emit status update to sync both
-        io.to(trip.passengerId).emit('status_updated', { tripId: trip.id, isConfirmedByPassenger: true });
+        // Emit to the specific trip room to ensure all monitoring devices see the update
+        io.to(trip.id).emit('status_updated', { tripId: trip.id, isConfirmedByPassenger: true });
       }
 
       res.json(trip);
