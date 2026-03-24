@@ -96,6 +96,34 @@ class TripController {
       res.status(500).json({ message: 'Internal server error' });
     }
   }
+  
+  async getActiveTrip(req: Request, res: Response) {
+    try {
+        // @ts-ignore
+      const userId = req.user.id;
+        // @ts-ignore
+      const userRole = req.user.role;
+      
+      const trip = await prisma.trip.findFirst({
+        where: {
+          OR: [
+            { passengerId: userId },
+            { driverId: userId }
+          ],
+          status: {
+            in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'STARTED']
+          }
+        },
+        include: { passenger: true, driver: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      res.json(trip || null);
+    } catch (error) {
+       console.error('Get active trip error ❌', error);
+       res.status(500).json({ message: 'Internal server error' });
+    }
+  }
 
   async updateTripStatus(req: Request, res: Response) {
     try {
@@ -145,7 +173,8 @@ class TripController {
         data: {
           status,
           driverId: driverId || undefined
-        }
+        },
+        include: { passenger: true, driver: true }
       });
 
       // Notify passenger of status change

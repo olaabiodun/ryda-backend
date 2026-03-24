@@ -5,6 +5,7 @@ import authMiddleware from '../middlewares/auth.middleware';
 const router = Router();
 
 router.post('/', authMiddleware, tripController.createTrip);
+router.get('/active', authMiddleware, tripController.getActiveTrip);
 router.get('/', authMiddleware, tripController.getTrips);
 router.get('/available', authMiddleware, tripController.getAvailableTrips);
 router.get('/:id', authMiddleware, tripController.getTripDetails);
