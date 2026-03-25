@@ -148,11 +148,3 @@ model Notification {
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
 }
-
-model EmailOTP {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  email     String   @unique
-  code      String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-}
