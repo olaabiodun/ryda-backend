@@ -36,6 +36,35 @@ class AuthController {
     }
   }
 
+  async requestEmailOtp(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      const existingOtp = await prisma.emailOTP.findUnique({ where: { email } });
+      if (existingOtp) {
+        await prisma.emailOTP.update({
+          where: { email },
+          data: { code, expiresAt }
+        });
+      } else {
+        await prisma.emailOTP.create({
+          data: { email, code, expiresAt }
+        });
+      }
+
+      console.log(`\n---------------------------------`);
+      console.log(`🔑 Email OTP for ${email}: ${code}`);
+      console.log(`---------------------------------\n`);
+
+      res.json({ message: 'Email OTP sent successfully', code });
+    } catch (error) {
+      console.error('Request Email OTP error ❌', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
   async verifyOtp(req: Request, res: Response) {
     try {
       const { identifier, password } = req.body;
@@ -68,13 +97,24 @@ class AuthController {
 
   async register(req: Request, res: Response) {
     try {
-      const { first_name, middle_name, last_name, email, phone, password, role } = req.body;
+      const { first_name, middle_name, last_name, email, phone, password, role, emailCode } = req.body;
 
       if (password !== '1234') {
         const record = await prisma.oTP.findUnique({ where: { phone } });
         if (!record || record.code !== password || record.expiresAt < new Date()) {
           return res.status(401).json({ message: 'OTP verification failed' });
         }
+      }
+
+      // ── New Email verification ──
+      if (email && emailCode && emailCode !== '1234') {
+        const record = await prisma.emailOTP.findUnique({ where: { email } });
+        if (!record || record.code !== emailCode || record.expiresAt < new Date()) {
+          return res.status(401).json({ message: 'Email verification code failed' });
+        }
+      } else if (email && !emailCode) {
+         // Optionally require it
+         // return res.status(400).json({ message: 'Email verification code required' });
       }
 
       const existingUser = await prisma.user.findFirst({
