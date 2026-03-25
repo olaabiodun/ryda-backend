@@ -67,7 +67,7 @@ class AuthController {
 
   async verifyOtp(req: Request, res: Response) {
     try {
-      const { identifier, password } = req.body;
+      const { identifier, password, requestedRole } = req.body;
       const phone = identifier;
       const otp = password;
 
@@ -78,10 +78,18 @@ class AuthController {
         }
       }
 
-      const user = await prisma.user.findUnique({ where: { phone } });
+      let user = await prisma.user.findUnique({ where: { phone } });
 
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
+      }
+
+      // If a specific role is requested during login (e.g. from the driver app), update it
+      if (requestedRole && (requestedRole === 'DRIVER' || requestedRole === 'PASSENGER')) {
+        user = await prisma.user.update({
+            where: { id: user.id },
+            data: { role: requestedRole }
+        });
       }
 
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
@@ -97,7 +105,7 @@ class AuthController {
 
   async register(req: Request, res: Response) {
     try {
-      const { first_name, middle_name, last_name, email, phone, password, role, emailCode } = req.body;
+      const { first_name, middle_name, last_name, email, phone, password, role, requestedRole, emailCode } = req.body;
 
       if (password !== '1234') {
         const record = await prisma.oTP.findUnique({ where: { phone } });
@@ -106,15 +114,12 @@ class AuthController {
         }
       }
 
-      // ── New Email verification ──
+      // ── New Email verification (Optional for now) ──
       if (email && emailCode && emailCode !== '1234') {
         const record = await prisma.emailOTP.findUnique({ where: { email } });
-        if (!record || record.code !== emailCode || record.expiresAt < new Date()) {
+        if (record && (record.code !== emailCode || record.expiresAt < new Date())) {
           return res.status(401).json({ message: 'Email verification code failed' });
         }
-      } else if (email && !emailCode) {
-         // Optionally require it
-         // return res.status(400).json({ message: 'Email verification code required' });
       }
 
       const existingUser = await prisma.user.findFirst({
@@ -122,7 +127,13 @@ class AuthController {
       });
 
       if (existingUser) {
-        return res.status(400).json({ message: 'User already exists' });
+        // If user exists, just update their role if they are registering from a specific app
+        const updatedUser = await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { role: requestedRole || role || existingUser.role }
+        });
+        const token = jwt.sign({ id: updatedUser.id, role: updatedUser.role }, JWT_SECRET, { expiresIn: '30d' });
+        return res.json({ user: { id: updatedUser.id, first_name: updatedUser.first_name, last_name: updatedUser.last_name, role: updatedUser.role, tier: updatedUser.tier, rides: updatedUser.rides, ryda_points: updatedUser.ryda_points }, token });
       }
 
       const user = await prisma.user.create({
@@ -132,7 +143,7 @@ class AuthController {
           last_name,
           email,
           phone,
-          role: role || 'PASSENGER'
+          role: requestedRole || role || 'PASSENGER'
         }
       });
 
@@ -352,9 +363,7 @@ class AuthController {
         ({ email, first_name, last_name, avatar } = req.body);
       }
 
-      if (!email) {
-        return res.status(400).json({ message: 'Email is required' });
-      }
+      const requestedRole = req.body.requestedRole;
 
       let user = await prisma.user.findUnique({ where: { email } });
 
@@ -365,9 +374,15 @@ class AuthController {
             last_name: last_name || '',
             email,
             avatar,
-            role: 'PASSENGER',
+            role: requestedRole || 'PASSENGER',
             phone: `GOOGLE_${Date.now()}`
           }
+        });
+      } else if (requestedRole && (requestedRole === 'DRIVER' || requestedRole === 'PASSENGER')) {
+        // Update existing user role if requested
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { role: requestedRole }
         });
       }
 
