@@ -25,10 +25,6 @@ class AuthController {
         });
       }
 
-      console.log(`\n---------------------------------`);
-      console.log(`🔑 OTP for ${phone}: ${code}`);
-      console.log(`---------------------------------\n`);
-
       // ── Send via WhatsApp Cloud API ──
       const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
       const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
@@ -88,9 +84,6 @@ class AuthController {
         });
       }
 
-      console.log(`\n---------------------------------`);
-      console.log(`🔑 Email OTP for ${email}: ${code}`);
-      console.log(`---------------------------------\n`);
 
       res.json({ message: 'Email OTP sent successfully', code });
     } catch (error) {
