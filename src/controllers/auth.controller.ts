@@ -29,7 +29,41 @@ class AuthController {
       console.log(`🔑 OTP for ${phone}: ${code}`);
       console.log(`---------------------------------\n`);
 
-      res.json({ message: 'OTP sent successfully', code });
+      // ── Send via WhatsApp Cloud API ──
+      const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+      const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+
+      if (WHATSAPP_TOKEN && WHATSAPP_PHONE_ID) {
+        try {
+          // Format phone number (remove + if present, etc. WhatsApp needs country code)
+          const formattedPhone = phone.replace(/\D/g, ''); 
+          
+          await fetch(`https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_ID}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              recipient_type: "individual",
+              to: formattedPhone,
+              type: "text",
+              text: {
+                preview_url: false,
+                body: `Your Ryda verification code is: ${code}. Valid for 10 minutes.`
+              }
+            })
+          });
+          console.log(`✅ WhatsApp message sent to ${formattedPhone}`);
+        } catch (waError) {
+          console.error(`❌ Failed to send WhatsApp message to ${phone}`);
+        }
+      } else {
+         console.log(`⚠️ WhatsApp credentials not found in .env, skipping message send.`);
+      }
+
+      res.json({ message: 'OTP processed successfully', code });
     } catch (error) {
       console.error('Request OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
