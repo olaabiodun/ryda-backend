@@ -35,7 +35,7 @@ model User {
   rides            Int              @default(0)
   ryda_points      Int              @default(0)
   isOnline         Boolean          @default(false)
-  isPinRequired    Boolean          @default(true)
+  isPinRequired    Boolean          @default(false)
   lastLocationLat  Float?
   lastLocationLng  Float?
   vehicles         Vehicle[]
@@ -81,7 +81,7 @@ model Trip {
   duration          Int?
   paymentMethod     String        @default("wallet")
   pin               String?
-  isPinRequired     Boolean       @default(true)
+  isPinRequired     Boolean       @default(false)
   isConfirmedByPassenger Boolean  @default(false)
   ratingByPassenger Int?
   ratingByDriver    Int?

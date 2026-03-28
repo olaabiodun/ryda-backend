@@ -177,13 +177,13 @@ class TripController {
         ? Math.floor(1000 + Math.random() * 9000).toString() 
         : undefined;
 
+      const updateData: any = { status };
+      if (driverId) updateData.driverId = driverId;
+      if (pin) updateData.pin = pin;
+
       const trip = await prisma.trip.update({
         where: { id },
-        data: {
-          status,
-          driverId: driverId || undefined,
-          ...(pin && { pin }) // Only update PIN field if we generated one
-        },
+        data: updateData,
         include: { passenger: true, driver: true }
       });
 

@@ -103,7 +103,7 @@ class UserController {
     try {
       // @ts-ignore
       const userId = req.user.id;
-      const { first_name, last_name, email, phone, avatar, emailCode } = req.body;
+      const { first_name, last_name, email, phone, avatar, emailCode, isPinRequired } = req.body;
 
       const currentUser = await prisma.user.findUnique({ where: { id: userId } });
       if (!currentUser) return res.status(404).json({ message: 'User not found' });
@@ -117,8 +117,8 @@ class UserController {
       if (first_name) updates.first_name = first_name;
       if (last_name) updates.last_name = last_name;
       if (avatar) updates.avatar = avatar;
-      if (phone) updates.phone = phone;
       if (phone) updates.phone = phone; // Allow setting phone if it passed the check above
+      if (isPinRequired !== undefined) updates.isPinRequired = isPinRequired;
 
       // 2. Handle email update with OTP verification
       if (email && email !== currentUser.email) {

@@ -16,11 +16,11 @@ export const configureTripSockets = (io: Server) => {
     });
 
     // Handle driver location updates
-    socket.on('update_location', async (data: { driverId: string; lat: number; lng: number }) => {
-      const { driverId, lat, lng } = data;
+    socket.on('update_location', async (data: { driverId: string; lat: number; lng: number; speed?: number; heading?: number; tripId?: string }) => {
+      const { driverId, lat, lng, speed, heading, tripId } = data;
       
       // Update Redis for fast nearby lookup
-      await redis.hset('driver_locations', driverId, JSON.stringify({ lat, lng, lastUpdate: Date.now() }));
+      await redis.hset('driver_locations', driverId, JSON.stringify({ lat, lng, speed, heading, lastUpdate: Date.now() }));
       
       // Update Prisma for persistence
       await prisma.user.update({
@@ -28,7 +28,10 @@ export const configureTripSockets = (io: Server) => {
         data: { lastLocationLat: lat, lastLocationLng: lng, isOnline: true }
       });
 
-      // console.log(`Driver ${driverId} location updated: ${lat}, ${lng}`);
+      // If driver is on a trip, broadcast live telemetry to the trip room (passenger)
+      if (tripId) {
+        io.to(tripId).emit('driver_location_update', { driverId, lat, lng, speed, heading });
+      }
     });
 
     // Handle new trip request (from passenger)
