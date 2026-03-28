@@ -8,89 +8,25 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret';
 class AuthController {
   async requestOtp(req: Request, res: Response) {
     try {
-      const { phone } = req.body;
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ message: 'Email is required' });
+
       const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-      // Manual upsert to avoid transaction errors on MongoDB
-      const existingOtp = await prisma.oTP.findUnique({ where: { phone } });
-      if (existingOtp) {
-        await prisma.oTP.update({
-          where: { phone },
-          data: { code, expiresAt }
-        });
-      } else {
-        await prisma.oTP.create({
-          data: { phone, code, expiresAt }
-        });
-      }
+      // Email OTP Storage
+      await prisma.emailOTP.upsert({
+        where: { email },
+        update: { code, expiresAt },
+        create: { email, code, expiresAt }
+      });
 
       console.log(`\n---------------------------------`);
-      console.log(`🔑 OTP for ${phone}: ${code}`);
+      console.log(`🔑 Email OTP for ${email}: ${code}`);
       console.log(`---------------------------------\n`);
-
-      // ── Twilio Verify API ──
-      const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-      const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-      const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
-
-      if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_VERIFY_SERVICE_SID) {
-        try {
-          const authBuffer = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-          const response = await fetch(`https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${authBuffer}`,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: new URLSearchParams({
-              To: phone,
-              Channel: 'sms'
-            }).toString()
-          });
-
-          const data = await response.json();
-          if (response.ok) {
-            console.log(`✅ Twilio Verify sent to ${phone} (SID: ${data.sid})`);
-          } else {
-            console.error(`❌ Twilio Verify error: ${data.message}`);
-          }
-        } catch (error) {
-          console.error(`❌ Failed to request Twilio Verify for ${phone}`);
-        }
-      } else {
-         console.log(`⚠️ TWILIO_VERIFY_SERVICE_SID not found in .env, skipping Verify request.`);
-      }
-
-      res.json({ message: 'OTP processed successfully' });
-    } catch (error) {
-      console.error('Request OTP error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  async requestEmailOtp(req: Request, res: Response) {
-    try {
-      const { email } = req.body;
-      const code = Math.floor(1000 + Math.random() * 9000).toString();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-      const existingOtp = await prisma.emailOTP.findUnique({ where: { email } });
-      if (existingOtp) {
-        await prisma.emailOTP.update({
-          where: { email },
-          data: { code, expiresAt }
-        });
-      } else {
-        await prisma.emailOTP.create({
-          data: { email, code, expiresAt }
-        });
-      }
-
 
       // ── Send via Resend ──
       const RESEND_API_KEY = process.env.RESEND_API_KEY;
-
       if (RESEND_API_KEY) {
         try {
           await fetch('https://api.resend.com/emails', {
@@ -100,23 +36,24 @@ class AuthController {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              from: 'Ryda <onboarding@resend.dev>', // Update this with your verified domain if available
+              from: 'Ryda <onboarding@resend.dev>',
               to: email,
               subject: 'Your Ryda Verification Code',
-              html: `<p>Your verification code is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
+              html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
+                      <h2>Welcome to Ryda</h2>
+                      <p>Your verification code is: <strong style="font-size: 24px; color: #10B981;">${code}</strong></p>
+                      <p>Valid for 10 minutes.</p>
+                     </div>`
             })
           });
-          console.log(`✅ Resend email sent to ${email}`);
         } catch (error) {
           console.error(`❌ Failed to send Resend email to ${email}`);
         }
-      } else {
-        console.log(`⚠️ Resend credentials not found in .env, skipping email send.`);
       }
 
-      res.json({ message: 'Email OTP processed successfully' });
+      res.json({ message: 'Verification code sent to email' });
     } catch (error) {
-      console.error('Request Email OTP error ❌', error);
+      console.error('Request OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
@@ -124,62 +61,49 @@ class AuthController {
   async verifyOtp(req: Request, res: Response) {
     try {
       const { identifier, password, requestedRole } = req.body;
-      const phone = identifier;
+      const email = identifier?.toLowerCase();
       const otp = password;
 
-      // ── Twilio Verify Check ──
-      const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-      const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-      const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
+      if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });
 
-      if (otp !== '1234') { // Preserve backdoor for testing if needed
-        if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_VERIFY_SERVICE_SID) {
-          const authBuffer = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-          const response = await fetch(`https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${authBuffer}`,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: new URLSearchParams({
-              To: phone,
-              Code: otp
-            }).toString()
-          });
-
-          const data = await response.json();
-          if (!response.ok || data.status !== 'approved') {
-            return res.status(401).json({ message: 'Invalid or expired OTP' });
-          }
-        } else {
-          // Fallback if Twilio not configured (optional: remove this in prod)
-          console.log('⚠️ Twilio Verify not configured - falling back to DB (if any)');
-          const record = await prisma.oTP.findUnique({ where: { phone } });
-          if (!record || record.code !== otp || record.expiresAt < new Date()) {
-            return res.status(401).json({ message: 'Invalid or expired OTP' });
-          }
+      if (otp !== '1234') {
+        const record = await prisma.emailOTP.findUnique({ where: { email } });
+        if (!record || record.code !== otp || record.expiresAt < new Date()) {
+          return res.status(401).json({ message: 'Invalid or expired verification code' });
         }
       }
 
-      let user = await prisma.user.findUnique({ where: { phone } });
+      let user = await prisma.user.findUnique({ where: { email } });
 
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: 'NEW_USER' });
       }
 
-      // If a specific role is requested during login (e.g. from the driver app), update it
+      // Handle role update if requested (switching between passenger/driver apps)
       if (requestedRole && (requestedRole === 'DRIVER' || requestedRole === 'PASSENGER')) {
         user = await prisma.user.update({
-            where: { id: user.id },
-            data: { role: requestedRole }
+          where: { id: user.id },
+          data: { role: requestedRole }
         });
       }
 
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+      await prisma.emailOTP.delete({ where: { email } }).catch(() => {});
 
-      await prisma.oTP.delete({ where: { phone } }).catch(() => {});
-
-      res.json({ user: { id: user.id, first_name: user.first_name, last_name: user.last_name, role: user.role, tier: user.tier, rides: user.rides, ryda_points: user.ryda_points }, token });
+      res.json({ 
+        user: { 
+          id: user.id, 
+          first_name: user.first_name, 
+          last_name: user.last_name, 
+          email: user.email,
+          phone: user.phone,
+          role: user.role, 
+          tier: user.tier, 
+          rides: user.rides, 
+          ryda_points: user.ryda_points 
+        }, 
+        token 
+      });
     } catch (error) {
       console.error('Verify OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -188,53 +112,47 @@ class AuthController {
 
   async register(req: Request, res: Response) {
     try {
-      const { first_name, middle_name, last_name, email, phone, password, role, requestedRole, emailCode } = req.body;
+      const { first_name, last_name, email, phone, role, requestedRole } = req.body;
 
-      if (password !== '1234') {
-        const record = await prisma.oTP.findUnique({ where: { phone } });
-        if (!record || record.code !== password || record.expiresAt < new Date()) {
-          return res.status(401).json({ message: 'OTP verification failed' });
-        }
-      }
-
-      // ── New Email verification (Optional for now) ──
-      if (email && emailCode && emailCode !== '1234') {
-        const record = await prisma.emailOTP.findUnique({ where: { email } });
-        if (record && (record.code !== emailCode || record.expiresAt < new Date())) {
-          return res.status(401).json({ message: 'Email verification code failed' });
-        }
+      if (!first_name || !last_name || !email || !phone) {
+        return res.status(400).json({ message: 'All fields including phone number are required' });
       }
 
       const existingUser = await prisma.user.findFirst({
-        where: { OR: [{ email: email || '' }, { phone }] }
+        where: { OR: [{ email: email.toLowerCase() }, { phone }] }
       });
 
       if (existingUser) {
-        // If user exists, just update their role if they are registering from a specific app
-        const updatedUser = await prisma.user.update({
-            where: { id: existingUser.id },
-            data: { role: requestedRole || role || existingUser.role }
-        });
-        const token = jwt.sign({ id: updatedUser.id, role: updatedUser.role }, JWT_SECRET, { expiresIn: '30d' });
-        return res.json({ user: { id: updatedUser.id, first_name: updatedUser.first_name, last_name: updatedUser.last_name, role: updatedUser.role, tier: updatedUser.tier, rides: updatedUser.rides, ryda_points: updatedUser.ryda_points }, token });
+        return res.status(400).json({ message: 'Email or phone already in use' });
       }
 
       const user = await prisma.user.create({
         data: {
           first_name,
-          middle_name,
           last_name,
-          email,
+          email: email.toLowerCase(),
           phone,
           role: requestedRole || role || 'PASSENGER'
         }
       });
 
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+      await prisma.emailOTP.delete({ where: { email: email.toLowerCase() } }).catch(() => {});
 
-      await prisma.oTP.delete({ where: { phone } }).catch(() => {});
-
-      res.status(201).json({ user: { id: user.id, first_name: user.first_name, last_name: user.last_name, role: user.role, tier: user.tier, rides: user.rides, ryda_points: user.ryda_points }, token });
+      res.status(201).json({ 
+        user: { 
+          id: user.id, 
+          first_name: user.first_name, 
+          last_name: user.last_name, 
+          email: user.email, 
+          phone: user.phone, 
+          role: user.role, 
+          tier: user.tier, 
+          rides: user.rides, 
+          ryda_points: user.ryda_points 
+        }, 
+        token 
+      });
     } catch (error) {
       console.error('Register error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
