@@ -33,7 +33,8 @@ class TripController {
           fare: calculatedFare,
           distance: distance,
           status: 'REQUESTED',
-          paymentMethod
+          paymentMethod,
+          isPinRequired: passenger?.isPinRequired ?? true
         }
       });
 
@@ -168,8 +169,11 @@ class TripController {
         }
       }
 
-      // Generate PIN ONLY if ride is being accepted for the first time
-      const pin = status === 'ACCEPTED' ? Math.floor(1000 + Math.random() * 9000).toString() : undefined;
+      // Generate PIN ONLY if ride is being accepted for the first time AND pin is required
+      const tripToUpdate = await prisma.trip.findUnique({ where: { id } });
+      const pin = (status === 'ACCEPTED' && tripToUpdate?.isPinRequired) 
+        ? Math.floor(1000 + Math.random() * 9000).toString() 
+        : undefined;
 
       const trip = await prisma.trip.update({
         where: { id },
