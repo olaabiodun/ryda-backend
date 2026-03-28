@@ -27,43 +27,40 @@ class AuthController {
 
       console.log(`\n---------------------------------`);
       console.log(`🔑 OTP for ${phone}: ${code}`);
-      console.log(`---------------------------------\n`);
+      console.log(`---------------------------------\n`)      // ── Twilio Verify API ──
+      const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+      const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+      const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 
-      // ── Send via WhatsApp Cloud API ──
-      const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-      const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
-
-      if (WHATSAPP_TOKEN && WHATSAPP_PHONE_ID) {
+      if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_VERIFY_SERVICE_SID) {
         try {
-          // Format phone number (remove + if present, etc. WhatsApp needs country code)
-          const formattedPhone = phone.replace(/\D/g, ''); 
-          
-          await fetch(`https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_ID}/messages`, {
+          const authBuffer = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+          const response = await fetch(`https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
-              'Content-Type': 'application/json'
+              'Authorization': `Basic ${authBuffer}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
             },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              recipient_type: "individual",
-              to: formattedPhone,
-              type: "text",
-              text: {
-                preview_url: false,
-                body: `Your Ryda verification code is: ${code}. Valid for 10 minutes.`
-              }
-            })
+            body: new URLSearchParams({
+              To: phone,
+              Channel: 'sms'
+            }).toString()
           });
-          console.log(`✅ WhatsApp message sent to ${formattedPhone}`);
-        } catch (waError) {
-          console.error(`❌ Failed to send WhatsApp message to ${phone}`);
+
+          const data = await response.json();
+          if (response.ok) {
+            console.log(`✅ Twilio Verify sent to ${phone} (SID: ${data.sid})`);
+          } else {
+            console.error(`❌ Twilio Verify error: ${data.message}`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to request Twilio Verify for ${phone}`);
         }
       } else {
-         console.log(`⚠️ WhatsApp credentials not found in .env, skipping message send.`);
+         console.log(`⚠️ TWILIO_VERIFY_SERVICE_SID not found in .env, skipping Verify request.`);
       }
 
-      res.json({ message: 'OTP processed successfully', code });
+      res.json({ message: 'OTP processed successfully' });
     } catch (error) {
       console.error('Request OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -92,7 +89,33 @@ class AuthController {
       console.log(`🔑 Email OTP for ${email}: ${code}`);
       console.log(`---------------------------------\n`);
 
-      res.json({ message: 'Email OTP sent successfully', code });
+      // ── Send via Resend ──
+      const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+      if (RESEND_API_KEY) {
+        try {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${RESEND_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from: 'Ryda <onboarding@resend.dev>', // Update this with your verified domain if available
+              to: email,
+              subject: 'Your Ryda Verification Code',
+              html: `<p>Your verification code is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
+            })
+          });
+          console.log(`✅ Resend email sent to ${email}`);
+        } catch (error) {
+          console.error(`❌ Failed to send Resend email to ${email}`);
+        }
+      } else {
+        console.log(`⚠️ Resend credentials not found in .env, skipping email send.`);
+      }
+
+      res.json({ message: 'Email OTP processed successfully' });
     } catch (error) {
       console.error('Request Email OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -105,10 +128,37 @@ class AuthController {
       const phone = identifier;
       const otp = password;
 
-      if (otp !== '1234') {
-        const record = await prisma.oTP.findUnique({ where: { phone } });
-        if (!record || record.code !== otp || record.expiresAt < new Date()) {
-          return res.status(401).json({ message: 'Invalid or expired OTP' });
+      // ── Twilio Verify Check ──
+      const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+      const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+      const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
+
+      if (otp !== '1234') { // Preserve backdoor for testing if needed
+        if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_VERIFY_SERVICE_SID) {
+          const authBuffer = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+          const response = await fetch(`https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${authBuffer}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+              To: phone,
+              Code: otp
+            }).toString()
+          });
+
+          const data = await response.json();
+          if (!response.ok || data.status !== 'approved') {
+            return res.status(401).json({ message: 'Invalid or expired OTP' });
+          }
+        } else {
+          // Fallback if Twilio not configured (optional: remove this in prod)
+          console.log('⚠️ Twilio Verify not configured - falling back to DB (if any)');
+          const record = await prisma.oTP.findUnique({ where: { phone } });
+          if (!record || record.code !== otp || record.expiresAt < new Date()) {
+            return res.status(401).json({ message: 'Invalid or expired OTP' });
+          }
         }
       }
 
@@ -442,29 +492,53 @@ class AuthController {
     }
   }
 
-  async updatePhone(req: Request, res: Response) {
+  async requestEmailChangeOtp(req: Request, res: Response) {
     try {
       // @ts-ignore
       const userId = req.user.id;
-      const { phone } = req.body;
-
-      if (!phone) {
-        return res.status(400).json({ message: 'Phone number is required' });
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user || !user.email) {
+        return res.status(400).json({ message: 'User or current email not found' });
       }
 
-      const existing = await prisma.user.findUnique({ where: { phone } });
-      if (existing) {
-        return res.status(400).json({ message: 'Phone number already in use' });
-      }
+      const email = user.email;
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-      const user = await prisma.user.update({
-        where: { id: userId },
-        data: { phone }
+      await prisma.emailOTP.upsert({
+        where: { email },
+        update: { code, expiresAt },
+        create: { email, code, expiresAt }
       });
 
-      res.json(user);
+      console.log(`\n---------------------------------`);
+      console.log(`🔑 Email Change OTP for ${email}: ${code}`);
+      console.log(`---------------------------------\n`);
+
+      const RESEND_API_KEY = process.env.RESEND_API_KEY;
+      if (RESEND_API_KEY) {
+        try {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${RESEND_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from: 'Ryda <onboarding@resend.dev>',
+              to: email,
+              subject: 'Email Change Verification',
+              html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
+            })
+          });
+        } catch (error) {
+          console.error(`❌ Failed to send Resend email to ${email}`);
+        }
+      }
+
+      res.json({ message: 'Verification code sent to your current email' });
     } catch (error) {
-      console.error('Update phone error ❌', error);
+      console.error('Request Email Change OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
@@ -473,19 +547,50 @@ class AuthController {
     try {
       // @ts-ignore
       const userId = req.user.id;
-      const { first_name, last_name, email, isOnline, avatar, lastLocationLat, lastLocationLng } = req.body;
+      const { first_name, last_name, email, isOnline, avatar, lastLocationLat, lastLocationLng, phone, emailCode } = req.body;
+
+      const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!currentUser) return res.status(404).json({ message: 'User not found' });
+
+      // 1. Prevent phone number change unless it's missing or a Google placeholder
+      if (phone && currentUser.phone && !currentUser.phone.startsWith('GOOGLE_')) {
+        return res.status(400).json({ message: 'Phone number cannot be changed' });
+      }
+
+      const updates: any = {};
+      if (first_name) updates.first_name = first_name;
+      if (last_name) updates.last_name = last_name;
+      if (avatar) updates.avatar = avatar;
+      if (phone) updates.phone = phone;
+      if (isOnline !== undefined) updates.isOnline = isOnline;
+      if (lastLocationLat !== undefined) updates.lastLocationLat = lastLocationLat;
+      if (lastLocationLng !== undefined) updates.lastLocationLng = lastLocationLng;
+
+      if (email && email !== currentUser.email) {
+        if (!emailCode) {
+          return res.status(400).json({ message: 'Verification code is required to change email' });
+        }
+
+        const otpRecord = await prisma.emailOTP.findUnique({
+          where: { email: currentUser.email! }
+        });
+
+        if (!otpRecord || otpRecord.code !== emailCode || otpRecord.expiresAt < new Date()) {
+          return res.status(400).json({ message: 'Invalid or expired verification code' });
+        }
+
+        const existingEmail = await prisma.user.findUnique({ where: { email } });
+        if (existingEmail) {
+          return res.status(400).json({ message: 'New email is already in use' });
+        }
+
+        updates.email = email;
+        await prisma.emailOTP.delete({ where: { id: otpRecord.id } });
+      }
 
       const user = await prisma.user.update({
         where: { id: userId },
-        data: {
-          ...(first_name && { first_name }),
-          ...(last_name && { last_name }),
-          ...(email && { email }),
-          ...(isOnline !== undefined && { isOnline }),
-          ...(avatar && { avatar }),
-          ...(lastLocationLat !== undefined && { lastLocationLat }),
-          ...(lastLocationLng !== undefined && { lastLocationLng }),
-        }
+        data: updates
       });
 
       res.json(user);

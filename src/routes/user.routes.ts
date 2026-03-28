@@ -6,6 +6,7 @@ const router = Router();
 
 // Profile
 router.put('/update-profile', authMiddleware, userController.updateProfile);
+router.post('/request-email-change', authMiddleware, userController.requestEmailChangeOtp);
 
 // Trusted Contacts
 router.get('/contacts', authMiddleware, userController.getContacts);

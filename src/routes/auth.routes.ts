@@ -14,7 +14,7 @@ router.post('/withdraw', authMiddleware, authController.withdraw);
 router.get('/profile', authMiddleware, authController.getProfile);
 router.get('/transactions', authMiddleware, authController.getTransactions);
 router.post('/google', authController.googleAuth);
-router.post('/update-phone', authMiddleware, authController.updatePhone);
+router.post('/request-email-change', authMiddleware, authController.requestEmailChangeOtp);
 router.patch('/profile', authMiddleware, authController.updateProfile);
 
 export default router;

@@ -48,21 +48,106 @@ class UserController {
     }
   }
 
+  async requestEmailChangeOtp(req: Request, res: Response) {
+    try {
+      // @ts-ignore
+      const userId = req.user.id;
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user || !user.email) {
+        return res.status(400).json({ message: 'User or current email not found' });
+      }
+
+      const email = user.email;
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await prisma.emailOTP.upsert({
+        where: { email },
+        update: { code, expiresAt },
+        create: { email, code, expiresAt }
+      });
+
+      console.log(`\n---------------------------------`);
+      console.log(`🔑 Email Change OTP for ${email}: ${code}`);
+      console.log(`---------------------------------\n`);
+
+      const RESEND_API_KEY = process.env.RESEND_API_KEY;
+      if (RESEND_API_KEY) {
+        try {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${RESEND_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from: 'Ryda <onboarding@resend.dev>',
+              to: email,
+              subject: 'Email Change Verification',
+              html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
+            })
+          });
+        } catch (error) {
+          console.error(`❌ Failed to send Resend email to ${email}`);
+        }
+      }
+
+      res.json({ message: 'Verification code sent to your current email' });
+    } catch (error) {
+      console.error('Request Email Change OTP error ❌', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
   async updateProfile(req: Request, res: Response) {
     try {
       // @ts-ignore
       const userId = req.user.id;
-      const { first_name, last_name, email, phone, avatar } = req.body;
+      const { first_name, last_name, email, phone, avatar, emailCode } = req.body;
+
+      const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!currentUser) return res.status(404).json({ message: 'User not found' });
+
+      // 1. Prevent phone number change unless it's missing or a Google placeholder
+      if (phone && currentUser.phone && !currentUser.phone.startsWith('GOOGLE_')) {
+        return res.status(400).json({ message: 'Phone number cannot be changed' });
+      }
+
+      const updates: any = {};
+      if (first_name) updates.first_name = first_name;
+      if (last_name) updates.last_name = last_name;
+      if (avatar) updates.avatar = avatar;
+      if (phone) updates.phone = phone;
+      if (phone) updates.phone = phone; // Allow setting phone if it passed the check above
+
+      // 2. Handle email update with OTP verification
+      if (email && email !== currentUser.email) {
+        if (!emailCode) {
+          return res.status(400).json({ message: 'Verification code is required to change email' });
+        }
+
+        const otpRecord = await prisma.emailOTP.findUnique({
+          where: { email: currentUser.email! }
+        });
+
+        if (!otpRecord || otpRecord.code !== emailCode || otpRecord.expiresAt < new Date()) {
+          return res.status(400).json({ message: 'Invalid or expired verification code' });
+        }
+
+        // Check if new email is already taken
+        const existingEmail = await prisma.user.findUnique({ where: { email } });
+        if (existingEmail) {
+          return res.status(400).json({ message: 'New email is already in use' });
+        }
+
+        updates.email = email;
+        // Delete OTP after successful use
+        await prisma.emailOTP.delete({ where: { id: otpRecord.id } });
+      }
 
       const user = await prisma.user.update({
         where: { id: userId },
-        data: {
-          ...(first_name && { first_name }),
-          ...(last_name && { last_name }),
-          ...(email && { email }),
-          ...(phone && { phone }),
-          ...(avatar && { avatar }),
-        }
+        data: updates
       });
 
       res.json(user);
