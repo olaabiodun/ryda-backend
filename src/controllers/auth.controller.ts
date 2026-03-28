@@ -29,7 +29,22 @@ class AuthController {
       console.log(`🔑 Email OTP for ${email}: ${code}`);
       console.log(`---------------------------------\n`);
 
-
+      // ✅ FIX: Send OTP via email (was missing here, only existed in requestEmailChangeOtp)
+      if (process.env.RESEND_API_KEY) {
+        try {
+          console.log(`📡 Attempting to send OTP email to ${email}...`);
+          const { data, error } = await resend.emails.send({
+            from: 'Ryda <noreply@biznova.ng>', // ✅ FIX: must be a valid email address, not just a domain
+            to: [email],
+            subject: 'Your Ryda verification code',
+            html: `<p>Your verification code is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
+          });
+          if (error) console.error(`❌ Resend SDK Error (OTP):`, error);
+          else console.log(`✅ Resend SDK Success (OTP):`, data);
+        } catch (err) {
+          console.error(`❌ Unexpected Resend SDK Exception (OTP):`, err);
+        }
+      }
 
       res.json({ message: 'Verification code sent to email' });
     } catch (error) {
@@ -416,7 +431,7 @@ class AuthController {
         try {
           console.log(`📡 Attempting email change OTP to ${email}...`);
           const { data, error } = await resend.emails.send({
-            from: 'Ryda <biznova.ng>',
+            from: 'Ryda <noreply@biznova.ng>', // ✅ FIX: corrected from invalid 'Ryda <biznova.ng>'
             to: [email],
             subject: 'Email Change Verification',
             html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
