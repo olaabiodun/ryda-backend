@@ -27,10 +27,11 @@ class AuthController {
 
       console.log(`\n---------------------------------`);
       console.log(`🔑 OTP for ${phone}: ${code}`);
-      console.log(`---------------------------------\n`)      // ── Twilio Verify API ──
-      const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-      const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-      const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
+      console.log(`---------------------------------\n`);
+
+      // ── Send via WhatsApp Cloud API ──
+      const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+      const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
       if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_VERIFY_SERVICE_SID) {
         try {
@@ -85,9 +86,6 @@ class AuthController {
         });
       }
 
-      console.log(`\n---------------------------------`);
-      console.log(`🔑 Email OTP for ${email}: ${code}`);
-      console.log(`---------------------------------\n`);
 
       // ── Send via Resend ──
       const RESEND_API_KEY = process.env.RESEND_API_KEY;
