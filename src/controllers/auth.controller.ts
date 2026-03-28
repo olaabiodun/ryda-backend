@@ -2,8 +2,12 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prisma';
+// @ts-ignore
+import { Resend } from 'resend';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret';
+// @ts-ignore
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 class AuthController {
   async requestOtp(req: Request, res: Response) {
@@ -25,29 +29,21 @@ class AuthController {
       console.log(`🔑 Email OTP for ${email}: ${code}`);
       console.log(`---------------------------------\n`);
 
-      // ── Send via Resend ──
-      const RESEND_API_KEY = process.env.RESEND_API_KEY;
-      if (RESEND_API_KEY) {
+      // ── Send via Resend SDK ──
+      if (process.env.RESEND_API_KEY) {
         try {
-          await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${RESEND_API_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              from: 'Ryda <onboarding@resend.dev>',
-              to: email,
-              subject: 'Your Ryda Verification Code',
-              html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
-                      <h2>Welcome to Ryda</h2>
-                      <p>Your verification code is: <strong style="font-size: 24px; color: #10B981;">${code}</strong></p>
-                      <p>Valid for 10 minutes.</p>
-                     </div>`
-            })
+          await resend.emails.send({
+            from: 'Ryda <onboarding@resend.dev>',
+            to: [email],
+            subject: 'Your Ryda Verification Code',
+            html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>Welcome to Ryda</h2>
+                    <p>Your verification code is: <strong style="font-size: 24px; color: #10B981;">${code}</strong></p>
+                    <p>Valid for 10 minutes.</p>
+                   </div>`
           });
         } catch (error) {
-          console.error(`❌ Failed to send Resend email to ${email}`);
+          console.error(`❌ Failed to send Resend email to ${email}`, error);
         }
       }
 
@@ -432,24 +428,16 @@ class AuthController {
       console.log(`🔑 Email Change OTP for ${email}: ${code}`);
       console.log(`---------------------------------\n`);
 
-      const RESEND_API_KEY = process.env.RESEND_API_KEY;
-      if (RESEND_API_KEY) {
+      if (process.env.RESEND_API_KEY) {
         try {
-          await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${RESEND_API_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              from: 'Ryda <onboarding@resend.dev>',
-              to: email,
-              subject: 'Email Change Verification',
-              html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
-            })
+          await resend.emails.send({
+            from: 'Ryda <onboarding@resend.dev>',
+            to: [email],
+            subject: 'Email Change Verification',
+            html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
           });
         } catch (error) {
-          console.error(`❌ Failed to send Resend email to ${email}`);
+          console.error(`❌ Failed to send Resend email to ${email}`, error);
         }
       }
 
