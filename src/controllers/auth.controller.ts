@@ -29,23 +29,7 @@ class AuthController {
       console.log(`🔑 Email OTP for ${email}: ${code}`);
       console.log(`---------------------------------\n`);
 
-      // ── Send via Resend SDK ──
-      if (process.env.RESEND_API_KEY) {
-        try {
-          await resend.emails.send({
-            from: 'Ryda <onboarding@resend.dev>',
-            to: [email],
-            subject: 'Your Ryda Verification Code',
-            html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2>Welcome to Ryda</h2>
-                    <p>Your verification code is: <strong style="font-size: 24px; color: #10B981;">${code}</strong></p>
-                    <p>Valid for 10 minutes.</p>
-                   </div>`
-          });
-        } catch (error) {
-          console.error(`❌ Failed to send Resend email to ${email}`, error);
-        }
-      }
+
 
       res.json({ message: 'Verification code sent to email' });
     } catch (error) {
@@ -430,14 +414,17 @@ class AuthController {
 
       if (process.env.RESEND_API_KEY) {
         try {
-          await resend.emails.send({
-            from: 'Ryda <onboarding@resend.dev>',
+          console.log(`📡 Attempting email change OTP to ${email}...`);
+          const { data, error } = await resend.emails.send({
+            from: 'Ryda <biznova.ng>',
             to: [email],
             subject: 'Email Change Verification',
             html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
           });
+          if (error) console.error(`❌ Resend SDK Error (Email Change):`, error);
+          else console.log(`✅ Resend SDK Success (Email Change):`, data);
         } catch (error) {
-          console.error(`❌ Failed to send Resend email to ${email}`, error);
+          console.error(`❌ Unexpected Resend SDK Exception (Email Change):`, error);
         }
       }
 
