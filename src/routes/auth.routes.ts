@@ -5,7 +5,6 @@ import authMiddleware from '../middlewares/auth.middleware';
 const router = Router();
 
 router.post('/request-otp', authController.requestOtp);
-router.post('/request-email-otp', authController.requestEmailOtp);
 router.post('/register', authController.register);
 router.post('/login', authController.verifyOtp);
 router.post('/topup', authMiddleware, authController.topUp);
