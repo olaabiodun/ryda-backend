@@ -11,6 +11,7 @@ class TripController {
 
       // Verify passenger balance before creating request
       const passenger = await prisma.user.findUnique({ where: { id: passengerId } });
+      console.log(`[DEBUG] Passenger ${passengerId} isPinRequired: ${passenger?.isPinRequired}`);
       const calculatedFare = calculateFare({
           rideType: (rideType as any) || 'eco',
           distanceKm: distance // frontend should now pass km
@@ -171,6 +172,7 @@ class TripController {
 
       // Generate PIN ONLY if ride is being accepted for the first time AND pin is required
       const tripToUpdate = await prisma.trip.findUnique({ where: { id } });
+      console.log(`[DEBUG] Trip ${id} isPinRequired: ${tripToUpdate?.isPinRequired}`);
       const pin = (status === 'ACCEPTED' && tripToUpdate?.isPinRequired) 
         ? Math.floor(1000 + Math.random() * 9000).toString() 
         : undefined;

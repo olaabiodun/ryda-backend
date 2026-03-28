@@ -289,7 +289,7 @@ class AuthController {
       const userId = req.user.id;
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true }
+        select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true }
       });
 
       if (!user) {
@@ -454,7 +454,7 @@ class AuthController {
     try {
       // @ts-ignore
       const userId = req.user.id;
-      const { first_name, last_name, email, isOnline, avatar, lastLocationLat, lastLocationLng, phone, emailCode } = req.body;
+      const { first_name, last_name, email, isOnline, isPinRequired, avatar, lastLocationLat, lastLocationLng, phone, emailCode } = req.body;
 
       const currentUser = await prisma.user.findUnique({ where: { id: userId } });
       if (!currentUser) return res.status(404).json({ message: 'User not found' });
@@ -470,6 +470,7 @@ class AuthController {
       if (avatar) updates.avatar = avatar;
       if (phone) updates.phone = phone;
       if (isOnline !== undefined) updates.isOnline = isOnline;
+      if (isPinRequired !== undefined) updates.isPinRequired = isPinRequired;
       if (lastLocationLat !== undefined) updates.lastLocationLat = lastLocationLat;
       if (lastLocationLng !== undefined) updates.lastLocationLng = lastLocationLng;
 
