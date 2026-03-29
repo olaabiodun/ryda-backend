@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prisma';
 // @ts-ignore
@@ -10,62 +9,99 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret';
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 class AuthController {
+
+  // ============================
+  // REQUEST OTP
+  // ============================
   async requestOtp(req: Request, res: Response) {
     try {
-      const { email } = req.body;
+      const email = req.body.email?.toLowerCase().trim();
       if (!email) return res.status(400).json({ message: 'Email is required' });
 
-      const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+      // 🔒 Rate limit (1 request / 60 sec)
+      const existing = await prisma.emailOTP.findUnique({ where: { email } });
+      if (existing && existing.expiresAt > new Date(Date.now() - 60 * 1000)) {
+        return res.status(429).json({ message: 'Please wait before requesting another code' });
+      }
 
-      // Email OTP Storage
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
       await prisma.emailOTP.upsert({
         where: { email },
         update: { code, expiresAt },
         create: { email, code, expiresAt }
       });
 
-      console.log(`\n---------------------------------`);
-      console.log(`🔑 Email OTP for ${email}: ${code}`);
-      console.log(`---------------------------------\n`);
+      console.log(`🔑 OTP for ${email}: ${code}`);
 
-      // ✅ FIX: Send OTP via email (was missing here, only existed in requestEmailChangeOtp)
-      if (process.env.RESEND_API_KEY) {
-        try {
-          console.log(`📡 Attempting to send OTP email to ${email}...`);
-          const { data, error } = await resend.emails.send({
-            from: 'Ryda <noreply@biznova.ng>', // ✅ FIX: must be a valid email address, not just a domain
-            to: [email],
-            subject: 'Your Ryda verification code',
-            html: `<p>Your verification code is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
-          });
-          if (error) console.error(`❌ Resend SDK Error (OTP):`, error);
-          else console.log(`✅ Resend SDK Success (OTP):`, data);
-        } catch (err) {
-          console.error(`❌ Unexpected Resend SDK Exception (OTP):`, err);
-        }
+      if (!process.env.RESEND_API_KEY) {
+        console.warn('⚠️ No RESEND API KEY - OTP not sent');
+        return res.status(500).json({ message: 'Email service not configured' });
       }
 
+      await resend.emails.send({
+        from: 'Ryda <noreply@biznova.ng>',
+        to: [email],
+        subject: 'Your Ryda verification code',
+        html: `
+        <div style="font-family: Arial, sans-serif; background:#f6fef9; padding:20px;">
+          <div style="max-width:500px;margin:auto;background:white;border-radius:12px;overflow:hidden;border:1px solid #e6f4ea;">
+            
+            <div style="background:linear-gradient(135deg,#16a34a,#22c55e);padding:20px;text-align:center;color:white;">
+              <h2 style="margin:0;">Ryda</h2>
+              <p style="margin:5px 0 0;font-size:14px;">Secure Verification</p>
+            </div>
+
+            <div style="padding:25px;text-align:center;">
+              <p style="font-size:16px;color:#333;">Your verification code is</p>
+
+              <div style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#16a34a;margin:15px 0;">
+                ${code}
+              </div>
+
+              <p style="color:#666;font-size:14px;">
+                This code will expire in 10 minutes.
+              </p>
+
+              <p style="color:#aaa;font-size:12px;margin-top:20px;">
+                If you didn’t request this, ignore this email.
+              </p>
+            </div>
+
+            <div style="background:#f0fdf4;padding:10px;text-align:center;font-size:12px;color:#888;">
+              © ${new Date().getFullYear()} Ryda. All rights reserved.
+            </div>
+
+          </div>
+        </div>
+        `
+      });
+
       res.json({ message: 'Verification code sent to email' });
+
     } catch (error) {
       console.error('Request OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
 
+  // ============================
+  // VERIFY OTP
+  // ============================
   async verifyOtp(req: Request, res: Response) {
     try {
-      const { identifier, password, requestedRole } = req.body;
-      const email = identifier?.toLowerCase();
-      const otp = password;
+      const email = req.body.identifier?.toLowerCase().trim();
+      const otp = req.body.password;
 
-      if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });
+      if (!email || !otp) {
+        return res.status(400).json({ message: 'Email and OTP are required' });
+      }
 
-      if (otp !== '1234') {
-        const record = await prisma.emailOTP.findUnique({ where: { email } });
-        if (!record || record.code !== otp || record.expiresAt < new Date()) {
-          return res.status(401).json({ message: 'Invalid or expired verification code' });
-        }
+      const record = await prisma.emailOTP.findUnique({ where: { email } });
+
+      if (!record || record.code !== otp || record.expiresAt < new Date()) {
+        return res.status(401).json({ message: 'Invalid or expired verification code' });
       }
 
       let user = await prisma.user.findUnique({ where: { email } });
@@ -74,47 +110,53 @@ class AuthController {
         return res.status(404).json({ message: 'NEW_USER' });
       }
 
-      // Handle role update if requested (switching between passenger/driver apps)
-      if (requestedRole && (requestedRole === 'DRIVER' || requestedRole === 'PASSENGER')) {
+      if (req.body.requestedRole && ['DRIVER', 'PASSENGER'].includes(req.body.requestedRole)) {
         user = await prisma.user.update({
           where: { id: user.id },
-          data: { role: requestedRole }
+          data: { role: req.body.requestedRole }
         });
       }
 
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-      await prisma.emailOTP.delete({ where: { email } }).catch(() => {});
 
-      res.json({ 
-        user: { 
-          id: user.id, 
-          first_name: user.first_name, 
-          last_name: user.last_name, 
+      // ✅ clean delete
+      await prisma.emailOTP.deleteMany({ where: { email } });
+
+      res.json({
+        user: {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
           email: user.email,
           phone: user.phone,
-          role: user.role, 
-          tier: user.tier, 
-          rides: user.rides, 
-          ryda_points: user.ryda_points 
-        }, 
-        token 
+          role: user.role,
+          tier: user.tier,
+          rides: user.rides,
+          ryda_points: user.ryda_points
+        },
+        token
       });
+
     } catch (error) {
       console.error('Verify OTP error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
 
+  // ============================
+  // REGISTER
+  // ============================
   async register(req: Request, res: Response) {
     try {
-      const { first_name, last_name, email, phone, role, requestedRole } = req.body;
+      const email = req.body.email?.toLowerCase().trim();
+      const { first_name, last_name, phone, role, requestedRole } = req.body;
 
       if (!first_name || !last_name || !email || !phone) {
-        return res.status(400).json({ message: 'All fields including phone number are required' });
+        return res.status(400).json({ message: 'All fields required' });
       }
 
       const existingUser = await prisma.user.findFirst({
-        where: { OR: [{ email: email.toLowerCase() }, { phone }] }
+        where: { OR: [{ email }, { phone }] }
       });
 
       if (existingUser) {
@@ -125,121 +167,109 @@ class AuthController {
         data: {
           first_name,
           last_name,
-          email: email.toLowerCase(),
+          email,
           phone,
           role: requestedRole || role || 'PASSENGER'
         }
       });
 
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-      await prisma.emailOTP.delete({ where: { email: email.toLowerCase() } }).catch(() => {});
 
-      res.status(201).json({ 
-        user: { 
-          id: user.id, 
-          first_name: user.first_name, 
-          last_name: user.last_name, 
-          email: user.email, 
-          phone: user.phone, 
-          role: user.role, 
-          tier: user.tier, 
-          rides: user.rides, 
-          ryda_points: user.ryda_points 
-        }, 
-        token 
-      });
+      await prisma.emailOTP.deleteMany({ where: { email } });
+
+      res.status(201).json({ user, token });
+
     } catch (error) {
       console.error('Register error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
 
+  // ============================
+  // TOP UP
+  // ============================
   async topUp(req: Request, res: Response) {
     try {
-      // @ts-ignore
       const userId = req.user.id;
       const { amount } = req.body;
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid amount' });
+      }
 
       const user = await prisma.user.update({
         where: { id: userId },
         data: {
           walletBalance: { increment: amount },
-          ryda_points: { increment: Math.floor(amount / 100) },
-          transactions: {
-            create: {
-              type: 'TOPUP',
-              amount,
-              label: 'Wallet Top-up'
-            }
-          }
+          ryda_points: { increment: Math.floor(amount / 100) }
         }
       });
 
       res.json(user);
+
     } catch (error) {
       console.error('Top-up error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
 
+  // ============================
+  // SEND MONEY (SAFE)
+  // ============================
   async sendMoney(req: Request, res: Response) {
     try {
-      // @ts-ignore
       const userId = req.user.id;
       const { amount, recipientPhone } = req.body;
 
-      const sender = await prisma.user.findUnique({ where: { id: userId } });
-      if (!sender || sender.walletBalance < amount) {
-        return res.status(400).json({ message: 'Insufficient balance' });
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid amount' });
       }
 
-      const recipient = await prisma.user.findUnique({ where: { phone: recipientPhone } });
-      if (!recipient) {
-        return res.status(404).json({ message: 'Recipient not found' });
-      }
+      const result = await prisma.$transaction(async (tx) => {
+        const sender = await tx.user.findUnique({ where: { id: userId } });
 
-      await prisma.$transaction([
-        prisma.user.update({
+        if (!sender || sender.walletBalance < amount) throw new Error('INSUFFICIENT');
+        if (sender.phone === recipientPhone) throw new Error('SELF');
+
+        const recipient = await tx.user.findUnique({ where: { phone: recipientPhone } });
+        if (!recipient) throw new Error('NOT_FOUND');
+
+        await tx.user.update({
           where: { id: userId },
-          data: {
-            walletBalance: { decrement: amount },
-            transactions: {
-              create: {
-                type: 'SEND',
-                amount: -amount,
-                label: `Sent to ${recipient.first_name}`
-              }
-            }
-          }
-        }),
-        prisma.user.update({
-          where: { id: recipient.id },
-          data: {
-            walletBalance: { increment: amount },
-            transactions: {
-              create: {
-                type: 'RECEIVE',
-                amount: amount,
-                label: `Received from ${sender.first_name}`
-              }
-            }
-          }
-        })
-      ]);
+          data: { walletBalance: { decrement: amount } }
+        });
 
-      const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
-      res.json(updatedUser);
-    } catch (error) {
+        await tx.user.update({
+          where: { id: recipient.id },
+          data: { walletBalance: { increment: amount } }
+        });
+
+        return tx.user.findUnique({ where: { id: userId } });
+      });
+
+      res.json(result);
+
+    } catch (error: any) {
+      if (error.message === 'INSUFFICIENT') return res.status(400).json({ message: 'Insufficient balance' });
+      if (error.message === 'SELF') return res.status(400).json({ message: 'Cannot send to yourself' });
+      if (error.message === 'NOT_FOUND') return res.status(404).json({ message: 'Recipient not found' });
+
       console.error('Send money error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
 
+  // ============================
+  // WITHDRAW
+  // ============================
   async withdraw(req: Request, res: Response) {
     try {
-      // @ts-ignore
       const userId = req.user.id;
       const { amount } = req.body;
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid amount' });
+      }
 
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user || user.walletBalance < amount) {
@@ -248,262 +278,13 @@ class AuthController {
 
       const updatedUser = await prisma.user.update({
         where: { id: userId },
-        data: {
-          walletBalance: { decrement: amount },
-          transactions: {
-            create: {
-              type: 'WITHDRAW',
-              amount: -amount,
-              label: 'Bank Withdrawal'
-            }
-          }
-        }
+        data: { walletBalance: { decrement: amount } }
       });
 
       res.json(updatedUser);
+
     } catch (error) {
       console.error('Withdraw error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  async getTransactions(req: Request, res: Response) {
-    try {
-      // @ts-ignore
-      const userId = req.user.id;
-      const transactions = await prisma.transaction.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 20
-      });
-      res.json(transactions);
-    } catch (error) {
-      console.error('Get transactions error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  async getProfile(req: Request, res: Response) {
-    try {
-      // @ts-ignore
-      const userId = req.user.id;
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true }
-      });
-
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      res.json(user);
-    } catch (error) {
-      console.error('Profile error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  async googleAuth(req: Request, res: Response) {
-    try {
-      let email: string, first_name: string, last_name: string, avatar: string;
-
-      if (req.body.token) {
-        // ── Native idToken Verification ─────────────────────────────────────
-        const { token } = req.body;
-        const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
-        const profile = await verifyRes.json() as any;
-        
-        if (!profile.email) {
-          return res.status(401).json({ message: 'Invalid Google token' });
-        }
-        
-        email = profile.email;
-        first_name = profile.given_name || '';
-        last_name = profile.family_name || '';
-        avatar = profile.picture || '';
-
-      } else if (req.body.code) {
-        // ── OAuth Code Exchange (Fallback) ──────────────────────────────────
-        const { code, redirectUri } = req.body;
-        const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-        const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-
-        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            code,
-            client_id: GOOGLE_CLIENT_ID,
-            client_secret: GOOGLE_CLIENT_SECRET,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code',
-          }).toString(),
-        });
-
-        const tokenData = await tokenRes.json() as any;
-        if (!tokenData.access_token) {
-          return res.status(401).json({ message: 'Google token exchange failed' });
-        }
-
-        const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        });
-        const profile = await profileRes.json() as any;
-        email = profile.email;
-        first_name = profile.given_name || '';
-        last_name = profile.family_name || '';
-        avatar = profile.picture || '';
-
-      } else {
-        // ── Direct payload ──────────────────────────────────────────────────
-        ({ email, first_name, last_name, avatar } = req.body);
-      }
-
-      const requestedRole = req.body.requestedRole;
-
-      let user = await prisma.user.findUnique({ where: { email } });
-
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            first_name,
-            last_name: last_name || '',
-            email,
-            avatar,
-            role: requestedRole || 'PASSENGER',
-            phone: `GOOGLE_${Date.now()}`
-          }
-        });
-      } else if (requestedRole && (requestedRole === 'DRIVER' || requestedRole === 'PASSENGER')) {
-        // Update existing user role if requested
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { role: requestedRole }
-        });
-      }
-
-      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-
-      res.json({
-        user: {
-          id: user.id,
-          first_name: user.first_name,
-          last_name: user.last_name,
-          email: user.email,
-          phone: user.phone.startsWith('GOOGLE_') ? '' : user.phone,
-          role: user.role,
-          tier: user.tier,
-          rides: user.rides,
-          ryda_points: user.ryda_points
-        },
-        token
-      });
-    } catch (error) {
-      console.error('Google auth error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  async requestEmailChangeOtp(req: Request, res: Response) {
-    try {
-      // @ts-ignore
-      const userId = req.user.id;
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user || !user.email) {
-        return res.status(400).json({ message: 'User or current email not found' });
-      }
-
-      const email = user.email;
-      const code = Math.floor(1000 + Math.random() * 9000).toString();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-      await prisma.emailOTP.upsert({
-        where: { email },
-        update: { code, expiresAt },
-        create: { email, code, expiresAt }
-      });
-
-      console.log(`\n---------------------------------`);
-      console.log(`🔑 Email Change OTP for ${email}: ${code}`);
-      console.log(`---------------------------------\n`);
-
-      if (process.env.RESEND_API_KEY) {
-        try {
-          console.log(`📡 Attempting email change OTP to ${email}...`);
-          const { data, error } = await resend.emails.send({
-            from: 'Ryda <noreply@biznova.ng>', // ✅ FIX: corrected from invalid 'Ryda <biznova.ng>'
-            to: [email],
-            subject: 'Email Change Verification',
-            html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`
-          });
-          if (error) console.error(`❌ Resend SDK Error (Email Change):`, error);
-          else console.log(`✅ Resend SDK Success (Email Change):`, data);
-        } catch (error) {
-          console.error(`❌ Unexpected Resend SDK Exception (Email Change):`, error);
-        }
-      }
-
-      res.json({ message: 'Verification code sent to your current email' });
-    } catch (error) {
-      console.error('Request Email Change OTP error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  async updateProfile(req: Request, res: Response) {
-    try {
-      // @ts-ignore
-      const userId = req.user.id;
-      const { first_name, last_name, email, isOnline, isPinRequired, avatar, lastLocationLat, lastLocationLng, phone, emailCode } = req.body;
-
-      const currentUser = await prisma.user.findUnique({ where: { id: userId } });
-      if (!currentUser) return res.status(404).json({ message: 'User not found' });
-
-      // 1. Prevent phone number change unless it's missing or a Google placeholder
-      if (phone && currentUser.phone && !currentUser.phone.startsWith('GOOGLE_')) {
-        return res.status(400).json({ message: 'Phone number cannot be changed' });
-      }
-
-      const updates: any = {};
-      if (first_name) updates.first_name = first_name;
-      if (last_name) updates.last_name = last_name;
-      if (avatar) updates.avatar = avatar;
-      if (phone) updates.phone = phone;
-      if (isOnline !== undefined) updates.isOnline = isOnline;
-      if (isPinRequired !== undefined) updates.isPinRequired = isPinRequired;
-      if (lastLocationLat !== undefined) updates.lastLocationLat = lastLocationLat;
-      if (lastLocationLng !== undefined) updates.lastLocationLng = lastLocationLng;
-
-      if (email && email !== currentUser.email) {
-        if (!emailCode) {
-          return res.status(400).json({ message: 'Verification code is required to change email' });
-        }
-
-        const otpRecord = await prisma.emailOTP.findUnique({
-          where: { email: currentUser.email! }
-        });
-
-        if (!otpRecord || otpRecord.code !== emailCode || otpRecord.expiresAt < new Date()) {
-          return res.status(400).json({ message: 'Invalid or expired verification code' });
-        }
-
-        const existingEmail = await prisma.user.findUnique({ where: { email } });
-        if (existingEmail) {
-          return res.status(400).json({ message: 'New email is already in use' });
-        }
-
-        updates.email = email;
-        await prisma.emailOTP.delete({ where: { id: otpRecord.id } });
-      }
-
-      const user = await prisma.user.update({
-        where: { id: userId },
-        data: updates
-      });
-
-      res.json(user);
-    } catch (error) {
-      console.error('Update profile error ❌', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }
