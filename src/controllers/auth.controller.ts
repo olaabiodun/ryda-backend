@@ -441,8 +441,7 @@ const email = user.email;
         from: 'Ryda <noreply@biznova.ng>', // ✅ FIX: corrected from invalid 'Ryda <biznova.ng>'  
         to: [email],  
         subject: 'Email Change Verification',  
-        html: `
-<div style="margin:0;padding:0;background:#f6fef9;font-family:Arial,sans-serif;">
+        html: `<div style="margin:0;padding:0;background:#f6fef9;font-family:Arial,sans-serif;">
   <div style="max-width:480px;margin:30px auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e6f4ea;box-shadow:0 10px 25px rgba(0,0,0,0.05);">
 
     <!-- Header -->
