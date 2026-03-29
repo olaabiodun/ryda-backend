@@ -1,179 +1,229 @@
-import { Server } from "socket.io";
-import { createServer } from "http";
-import Redis from "ioredis";
-import { PrismaClient } from "@prisma/client";
+import { Server, Socket } from 'socket.io';
+import redis from '../config/redis';
+import prisma from '../config/prisma';
 
-const prisma = new PrismaClient();
-const redis = new Redis();
+interface AuthSocket extends Socket {
+  data: {
+    userId?: string;
+    role?: 'DRIVER' | 'PASSENGER';
+  };
+}
 
-const httpServer = createServer();
-const io = new Server(httpServer, {
-  cors: {
-    origin: "*"
-  }
-});
-
-
-// ======================
-// AUTH MIDDLEWARE
-// ======================
-io.use((socket, next) => {
-  try {
-    const userId = socket.handshake.auth.userId;
-    const role = socket.handshake.auth.role;
+export const configureTripSockets = (io: Server) => {
+  // Attach auth middleware FIRST
+  io.use((socket: AuthSocket, next) => {
+    const userId = socket.handshake.auth?.userId;
+    const role = socket.handshake.auth?.role;
 
     if (!userId || !role) {
-      return next(new Error("Unauthorized"));
+      return next(new Error('Unauthorized'));
     }
 
     socket.data.userId = userId;
     socket.data.role = role;
 
     next();
-  } catch (err) {
-    next(new Error("Unauthorized"));
-  }
-});
-
-
-// ======================
-// CONNECTION
-// ======================
-io.on("connection", (socket) => {
-  console.log("User connected:", socket.data.userId);
-
-
-  // ======================
-  // JOIN TRIP ROOM
-  // ======================
-  socket.on("join_trip", ({ tripId }) => {
-    if (!tripId) return;
-
-    socket.join(`trip:${tripId}`);
-    socket.data.tripId = tripId;
   });
 
+  io.on('connection', (socket: AuthSocket) => {
+    console.log('User connected:', socket.id, socket.data);
 
-  // ======================
-  // START TRIP
-  // ======================
-  socket.on("start_trip", async ({ tripId }) => {
-    const driverId = socket.data.userId;
+    const userId = socket.data.userId!;
+    const role = socket.data.role!;
 
-    if (!tripId || !driverId) return;
+    // Auto join personal room
+    socket.join(userId);
 
-    try {
-      const trip = await prisma.trip.update({
-        where: { id: tripId },
-        data: {
-          status: "in_progress",
-          startedAt: new Date()
+    if (role === 'DRIVER') {
+      socket.join('drivers');
+    }
+
+    console.log(`User ${userId} joined as ${role}`);
+
+    // ─────────────── LOCATION UPDATE ───────────────
+    socket.on(
+      'update_location',
+      async (data: {
+        lat: number;
+        lng: number;
+        speed?: number;
+        heading?: number;
+        tripId?: string;
+      }) => {
+        try {
+          const driverId = socket.data.userId;
+
+          if (!driverId) {
+            console.error('Missing driverId from socket auth');
+            return;
+          }
+
+          const { lat, lng, speed, heading, tripId } = data;
+
+          // Redis fast store
+          await redis.hset(
+            'driver_locations',
+            driverId,
+            JSON.stringify({
+              lat,
+              lng,
+              speed,
+              heading,
+              lastUpdate: Date.now(),
+            })
+          );
+
+          // Prisma persistence
+          await prisma.user.update({
+            where: { id: driverId },
+            data: {
+              lastLocationLat: lat,
+              lastLocationLng: lng,
+              isOnline: true,
+            },
+          });
+
+          // Broadcast to trip room
+          if (tripId) {
+            io.to(tripId).emit('driver_location_update', {
+              driverId,
+              lat,
+              lng,
+              speed,
+              heading,
+            });
+          }
+        } catch (error) {
+          console.error('update_location error:', error);
         }
-      });
-
-      io.to(`trip:${tripId}`).emit("trip_started", {
-        tripId,
-        status: trip.status
-      });
-    } catch (err) {
-      console.error("start_trip error:", err);
-    }
-  });
-
-
-  // ======================
-  // UPDATE LOCATION (FIXED)
-  // ======================
-  socket.on("update_location", async (data) => {
-    const userId = socket.data.userId;
-    const role = socket.data.role;
-
-    const { lat, lng, speed, heading, tripId } = data;
-
-    if (!userId || !tripId) return;
-    if (role !== "driver") return;
-
-    try {
-      await redis.hset(
-        "driver_locations",
-        userId,
-        JSON.stringify({
-          lat,
-          lng,
-          speed,
-          heading,
-          updatedAt: Date.now()
-        })
-      );
-
-      io.to(`trip:${tripId}`).emit("driver_location_update", {
-        driverId: userId,
-        lat,
-        lng,
-        speed,
-        heading
-      });
-    } catch (err) {
-      console.error("update_location error:", err);
-    }
-  });
-
-
-  // ======================
-  // END TRIP (FULL FIX)
-  // ======================
-  socket.on("end_trip", async ({ tripId }) => {
-    const driverId = socket.data.userId;
-
-    if (!tripId || !driverId) return;
-
-    try {
-      const trip = await prisma.trip.findUnique({
-        where: { id: tripId }
-      });
-
-      if (!trip) return;
-
-      if (trip.driverId !== driverId) {
-        console.error("Unauthorized end_trip attempt");
-        return;
       }
+    );
 
-      const updated = await prisma.trip.update({
-        where: { id: tripId },
-        data: {
-          status: "completed",
-          endedAt: new Date()
+    // ─────────────── REQUEST TRIP ───────────────
+    socket.on(
+      'request_trip',
+      async (data: {
+        tripId: string;
+        origin: any;
+        destination: any;
+        passengerId: string;
+      }) => {
+        try {
+          const trip = await prisma.trip.findUnique({
+            where: { id: data.tripId },
+            include: { passenger: true },
+          });
+
+          if (trip) {
+            io.to('drivers').emit('new_trip_request', trip);
+          }
+        } catch (error) {
+          console.error('request_trip error:', error);
         }
-      });
+      }
+    );
 
-      await redis.hdel("driver_locations", driverId);
+    // ─────────────── ACCEPT TRIP ───────────────
+    socket.on(
+      'accept_trip',
+      async (data: { tripId: string }) => {
+        try {
+          const driverId = socket.data.userId;
 
-      io.to(`trip:${tripId}`).emit("trip_ended", {
-        tripId,
-        status: updated.status,
-        endedAt: updated.endedAt
-      });
+          if (!driverId) return;
 
-      socket.leave(`trip:${tripId}`);
-    } catch (err) {
-      console.error("end_trip error:", err);
-    }
+          const pin = Math.floor(1000 + Math.random() * 9000).toString();
+
+          const trip = await prisma.trip.update({
+            where: { id: data.tripId },
+            data: {
+              driverId,
+              status: 'ACCEPTED',
+              pin,
+            },
+            include: { passenger: true, driver: true },
+          });
+
+          io.to(trip.id).emit('trip_accepted', trip);
+          io.to(trip.passengerId).emit('trip_accepted', trip);
+
+          console.log(`Trip ${trip.id} accepted by ${driverId}`);
+        } catch (error) {
+          console.error('accept_trip error:', error);
+        }
+      }
+    );
+
+    // ─────────────── UPDATE TRIP STATUS ───────────────
+    socket.on(
+      'update_trip_status',
+      async (data: { tripId: string; status: string }) => {
+        try {
+          const trip = await prisma.trip.findUnique({
+            where: { id: data.tripId },
+          });
+
+          if (!trip) return;
+
+          const updatedTrip = await prisma.trip.update({
+            where: { id: data.tripId },
+            data: { status: data.status },
+            include: { passenger: true, driver: true },
+          });
+
+          io.to(trip.id).emit('status_updated', updatedTrip);
+          io.to(updatedTrip.passengerId).emit('status_updated', updatedTrip);
+        } catch (error) {
+          console.error('update_trip_status error:', error);
+        }
+      }
+    );
+
+    // ─────────────── CHAT ───────────────
+    socket.on(
+      'send_message',
+      async (data: {
+        receiverId: string;
+        content: string;
+        tripId?: string;
+      }) => {
+        try {
+          const senderId = socket.data.userId;
+
+          if (!senderId) return;
+
+          const message = await prisma.chatMessage.create({
+            data: {
+              senderId,
+              receiverId: data.receiverId,
+              content: data.content,
+              tripId: data.tripId,
+            },
+          });
+
+          io.to(data.receiverId).emit('receive_message', message);
+        } catch (error) {
+          console.error('chat error:', error);
+        }
+      }
+    );
+
+    // ─────────────── DISCONNECT ───────────────
+    socket.on('disconnect', async () => {
+      try {
+        const userId = socket.data.userId;
+
+        if (!userId) return;
+
+        await prisma.user.update({
+          where: { id: userId },
+          data: { isOnline: false },
+        });
+
+        console.log('User disconnected:', socket.id);
+      } catch (error) {
+        console.error('disconnect error:', error);
+      }
+    });
   });
-
-
-  // ======================
-  // DISCONNECT
-  // ======================
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.data.userId);
-  });
-});
-
-
-// ======================
-// START SERVER
-// ======================
-httpServer.listen(3000, () => {
-  console.log("Socket server running on port 3000");
-});
+};
