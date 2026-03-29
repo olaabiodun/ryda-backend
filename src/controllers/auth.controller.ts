@@ -62,12 +62,11 @@ const otp = password;
 
 if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });  
 
-  if (otp !== '1234') {  
-    const record = await prisma.emailOTP.findUnique({ where: { email } });  
-    if (!record || record.code !== otp || record.expiresAt < new Date()) {  
-      return res.status(401).json({ message: 'Invalid or expired verification code' });  
-    }  
-  }  
+  const record = await prisma.emailOTP.findUnique({ where: { email } });
+
+if (!record || record.code !== otp || record.expiresAt < new Date()) {
+  return res.status(401).json({ message: 'Invalid or expired verification code' });
+}
 
   let user = await prisma.user.findUnique({ where: { email } });  
 
@@ -442,7 +441,49 @@ const email = user.email;
         from: 'Ryda <noreply@biznova.ng>', // ✅ FIX: corrected from invalid 'Ryda <biznova.ng>'  
         to: [email],  
         subject: 'Email Change Verification',  
-        html: `<p>Your verification code to change your email is: <strong>${code}</strong>. It is valid for 10 minutes.</p>`  
+        html: `
+<div style="margin:0;padding:0;background:#f6fef9;font-family:Arial,sans-serif;">
+  <div style="max-width:480px;margin:30px auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e6f4ea;box-shadow:0 10px 25px rgba(0,0,0,0.05);">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#16a34a,#22c55e);padding:20px;text-align:center;color:#fff;">
+      <h2 style="margin:0;font-size:20px;">Ryda</h2>
+      <p style="margin:5px 0 0;font-size:13px;opacity:0.9;">Secure Verification</p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:30px 25px;text-align:center;">
+      <p style="font-size:15px;color:#333;margin-bottom:10px;">
+        Use the code below to continue
+      </p>
+
+      <div style="
+        font-size:34px;
+        font-weight:700;
+        letter-spacing:8px;
+        color:#16a34a;
+        margin:20px 0;
+      ">
+        ${code}
+      </div>
+
+      <p style="font-size:13px;color:#666;margin-top:10px;">
+        This code expires in <b>10 minutes</b>.
+      </p>
+
+      <div style="margin-top:25px;font-size:12px;color:#aaa;">
+        Didn’t request this? You can safely ignore this email.
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f0fdf4;padding:12px;text-align:center;font-size:11px;color:#888;">
+      © ${new Date().getFullYear()} Ryda. All rights reserved.
+    </div>
+
+  </div>
+</div>
+`
       });  
       if (error) console.error(`❌ Resend SDK Error (Email Change):`, error);  
       else console.log(`✅ Resend SDK Success (Email Change):`, data);  
