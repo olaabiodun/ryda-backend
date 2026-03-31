@@ -38,6 +38,7 @@ model User {
   isPinRequired    Boolean          @default(false)
   lastLocationLat  Float?
   lastLocationLng  Float?
+  isVehicleVerified Boolean         @default(false)
   vehicles         Vehicle[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
