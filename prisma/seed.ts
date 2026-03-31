@@ -6,9 +6,21 @@ const prisma = new PrismaClient()
 async function main() {
   const hashedPassword = await bcrypt.hash('password123', 10)
 
-  // Clear existing data
-  await prisma.trip.deleteMany({})
-  await prisma.user.deleteMany({})
+  // Upsert Super Admin (will create if missing, or skip if exists)
+  const admin = await prisma.user.upsert({
+    where: { email: 'olaabiodun149@gmail.com' },
+    update: { role: 'ADMIN' },
+    create: {
+      first_name: 'Ryda',
+      last_name: 'Admin',
+      email: 'olaabiodun149@gmail.com',
+      phone: '08101491460', // Use a unique phone for your environment
+      password: hashedPassword,
+      role: 'ADMIN',
+    },
+  })
+
+  console.log(`✅ Admin user ensured: ${admin.email}`);
 
   // Create sub-users (Passengers)
   const passenger1 = await prisma.user.upsert({
