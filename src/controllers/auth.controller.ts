@@ -15,8 +15,12 @@ try {
 const { email } = req.body;
 if (!email) return res.status(400).json({ message: 'Email is required' });
 
-const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code  
+  const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code  
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins  
+
+  if (['apple-test@ryda.ng', 'google-test@ryda.ng'].includes(email.toLowerCase())) {
+    return res.json({ message: 'Verification code sent to email' });
+  }
 
   // Email OTP Storage  
   await prisma.emailOTP.upsert({  
@@ -62,11 +66,18 @@ const otp = password;
 
 if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });  
 
-  const record = await prisma.emailOTP.findUnique({ where: { email } });
+  const isTestAccount = ['apple-test@ryda.ng', 'google-test@ryda.ng'].includes(email);
+  if (isTestAccount) {
+    if (otp !== '1234') {
+      return res.status(401).json({ message: 'Invalid or expired verification code' });
+    }
+  } else {
+    const record = await prisma.emailOTP.findUnique({ where: { email } });
 
-if (!record || record.code !== otp || record.expiresAt < new Date()) {
-  return res.status(401).json({ message: 'Invalid or expired verification code' });
-}
+    if (!record || record.code !== otp || record.expiresAt < new Date()) {
+      return res.status(401).json({ message: 'Invalid or expired verification code' });
+    }
+  }
 
   let user = await prisma.user.findUnique({ where: { email } });  
 
