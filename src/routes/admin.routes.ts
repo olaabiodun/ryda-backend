@@ -15,5 +15,9 @@ router.patch('/users/:id', adminController.updateUser);
 router.get('/trips', adminController.getTrips);
 router.patch('/trips/:id', adminController.updateTrip);
 router.get('/transactions', adminController.getTransactions);
+router.get('/rewards', adminController.getRewards);
+router.get('/points-history', adminController.getPointsHistory);
+router.get('/notifications', adminController.getNotifications);
+router.get('/chat-conversations', adminController.getChatConversations);
 
 export default router;
