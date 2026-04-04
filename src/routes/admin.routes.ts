@@ -13,6 +13,7 @@ router.get('/stats', adminController.getStats);
 router.get('/users', adminController.getUsers);
 router.patch('/users/:id', adminController.updateUser);
 router.get('/trips', adminController.getTrips);
+router.patch('/trips/:id', adminController.updateTrip);
 router.get('/transactions', adminController.getTransactions);
 
 export default router;

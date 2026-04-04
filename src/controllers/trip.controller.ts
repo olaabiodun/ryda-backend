@@ -68,8 +68,24 @@ class TripController {
 
   async getAvailableTrips(req: Request, res: Response) {
     try {
+      // @ts-ignore
+      const driverId = req.user.id;
+      const driver = await prisma.user.findUnique({ where: { id: driverId } });
+      
+      const debt = driver?.walletBalance || 0;
+      const DEBT_BLOCK_LIMIT = -5000;
+      const CASH_BLOCK_LIMIT = -2000;
+
+      if (debt < DEBT_BLOCK_LIMIT) {
+        return res.json([]); // Completely blocked until debt is settled
+      }
+
       const trips = await prisma.trip.findMany({
-        where: { status: 'REQUESTED', driverId: null },
+        where: { 
+          status: 'REQUESTED', 
+          driverId: null,
+          paymentMethod: debt < CASH_BLOCK_LIMIT ? 'wallet' : undefined
+        },
         include: { passenger: true },
         orderBy: { createdAt: 'desc' }
       });
@@ -136,32 +152,101 @@ class TripController {
 
       // Handle trip completion financial deduction
       if (status === 'COMPLETED') {
+        const { amountCollected } = req.body;
         const trip = await prisma.trip.findUnique({
            where: { id },
            include: { passenger: true, driver: true }
         });
 
         if (trip && trip.status !== 'COMPLETED') {
-          const isCash = (trip as any).paymentMethod === 'cash';
+          const isCash = (trip as any).paymentMethod?.toLowerCase() === 'cash';
+          const fare = trip.fare;
+          const commissionRate = 0.2;
+          const commission = fare * commissionRate;
+          const driverId = trip.driverId!;
 
-          // Run updates sequentially instead of in a transaction to support MongoDB Atlas shared tier
-          // 1. Passenger updates
-          await prisma.user.update({
-            where: { id: trip.passengerId },
-            data: { 
-              walletBalance: isCash ? undefined : { decrement: trip.fare },
-              rides: { increment: 1 }
+          if (isCash) {
+            // Cash Trip Logic:
+            // 1. Driver collected X. Platform takes Y commission digitally.
+            // 2. If X > fare, difference is credited to passenger wallet.
+            const extraToPassenger = amountCollected ? Math.max(0, amountCollected - fare) : 0;
+            const driverDeduction = commission + extraToPassenger;
+
+            // Update Passenger: Credit extra amount if any
+            await prisma.user.update({
+              where: { id: trip.passengerId },
+              data: { 
+                walletBalance: { increment: extraToPassenger },
+                rides: { increment: 1 }
+              }
+            });
+
+            // Update Driver: Deduct commission + extra (since they kept the physical cash)
+            await prisma.user.update({
+              where: { id: driverId },
+              data: { 
+                walletBalance: { decrement: driverDeduction },
+                rides: { increment: 1 }
+              }
+            });
+
+            // Create transactions
+            await prisma.transaction.create({
+              data: {
+                userId: driverId,
+                type: 'PLATFORM_FEE',
+                amount: -commission,
+                label: `Commission for Trip #${trip.id.substring(0, 8)}`
+              }
+            });
+
+            if (extraToPassenger > 0) {
+                await prisma.transaction.create({
+                    data: {
+                      userId: trip.passengerId,
+                      type: 'OVERPAYMENT_CREDIT',
+                      amount: extraToPassenger,
+                      label: `Change from Trip #${trip.id.substring(0, 8)}`
+                    }
+                });
+                await prisma.transaction.create({
+                    data: {
+                      userId: driverId,
+                      type: 'CHANGE_DEDUCTION',
+                      amount: -extraToPassenger,
+                      label: `Change given to passenger for Trip #${trip.id.substring(0, 8)}`
+                    }
+                });
             }
-          });
-          // 2. Driver updates
-          await prisma.user.update({
-            where: { id: trip.driverId! },
-            data: { 
-              walletBalance: isCash ? undefined : { increment: trip.fare * 0.8 },
-              rides: { increment: 1 }
-            }
-          });
-          // 3. Finalize status
+          } else {
+            // Wallet Trip Logic:
+            // 1. Deduct full fare from passenger
+            // 2. Credit fare - commission to driver
+            await prisma.user.update({
+              where: { id: trip.passengerId },
+              data: { 
+                walletBalance: { decrement: fare },
+                rides: { increment: 1 }
+              }
+            });
+            await prisma.user.update({
+              where: { id: driverId },
+              data: { 
+                walletBalance: { increment: fare - commission },
+                rides: { increment: 1 }
+              }
+            });
+
+            // Record transaction
+            await prisma.transaction.createMany({
+                data: [
+                    { userId: trip.passengerId, type: 'TRIP_PAYMENT', amount: -fare, label: `Trip #${trip.id.substring(0, 8)}` },
+                    { userId: driverId, type: 'TRIP_EARNING', amount: fare - commission, label: `Earnings for Trip #${trip.id.substring(0, 8)}` }
+                ]
+            });
+          }
+
+          // Finalize status
           await prisma.trip.update({
             where: { id },
             data: { status }
@@ -172,6 +257,20 @@ class TripController {
 
       // Generate PIN ONLY if ride is being accepted for the first time AND pin is required
       const tripToUpdate = await prisma.trip.findUnique({ where: { id } });
+      
+      if (status === 'ACCEPTED' && driverId) {
+        const driver = await prisma.user.findUnique({ where: { id: driverId as string } });
+        const debt = driver?.walletBalance || 0;
+        const isCash = (tripToUpdate as any)?.paymentMethod?.toLowerCase() === 'cash';
+        
+        if (debt < -5000) {
+          return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept rides.' });
+        }
+        if (isCash && debt < -2000) {
+          return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept more cash rides.' });
+        }
+      }
+
       console.log(`[DEBUG] Trip ${id} isPinRequired: ${tripToUpdate?.isPinRequired}`);
       const pin = (status === 'ACCEPTED' && tripToUpdate?.isPinRequired) 
         ? Math.floor(1000 + Math.random() * 9000).toString() 

@@ -164,6 +164,27 @@ class AdminController {
     }
   }
 
+  async updateTrip(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const data = req.body;
+      
+      const trip = await prisma.trip.update({
+        where: { id },
+        data,
+        include: {
+          passenger: { select: { first_name: true, last_name: true, phone: true } },
+          driver: { select: { first_name: true, last_name: true, phone: true } }
+        }
+      });
+
+      res.json(trip);
+    } catch (error) {
+      console.error('Admin Update Trip Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
   // ── Financial Overview ──
   async getTransactions(req: Request, res: Response) {
     try {
