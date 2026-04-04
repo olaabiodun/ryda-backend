@@ -107,12 +107,12 @@ if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are re
       tier: user.tier,   
       rides: user.rides,   
       ryda_points: user.ryda_points,
-      nin: user.nin,
-      ninFront: user.ninFront,
-      ninBack: user.ninBack,
-      homeAddress: user.homeAddress,
-      isVerified: user.isVerified,
-      isVehicleVerified: user.isVehicleVerified,
+      nin: (user as any).nin,
+      ninFront: (user as any).ninFront,
+      ninBack: (user as any).ninBack,
+      homeAddress: (user as any).homeAddress,
+      isVerified: (user as any).isVerified,
+      isVehicleVerified: (user as any).isVehicleVerified,
       vehicles: user.vehicles,
       avatar: user.avatar
     },   
@@ -165,12 +165,12 @@ if (!first_name || !last_name || !email || !phone) {
       tier: user.tier,   
       rides: user.rides,   
       ryda_points: user.ryda_points,
-      nin: user.nin,
-      ninFront: user.ninFront,
-      ninBack: user.ninBack,
-      homeAddress: user.homeAddress,
-      isVerified: user.isVerified,
-      isVehicleVerified: user.isVehicleVerified,
+      nin: (user as any).nin,
+      ninFront: (user as any).ninFront,
+      ninBack: (user as any).ninBack,
+      homeAddress: (user as any).homeAddress,
+      isVerified: (user as any).isVerified,
+      isVehicleVerified: (user as any).isVehicleVerified,
       vehicles: user.vehicles,
       avatar: user.avatar
     },   
@@ -321,7 +321,7 @@ try {
 const userId = req.user.id;
 const user = await prisma.user.findUnique({
 where: { id: userId },
-select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true, nin: true, ninFront: true, ninBack: true, homeAddress: true, isVerified: true, isVehicleVerified: true }
+select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true, nin: true, ninFront: true, ninBack: true, homeAddress: true, isVerified: true, isVehicleVerified: true } as any
 });
 
 if (!user) {  
@@ -428,12 +428,12 @@ if (req.body.token) {
       tier: user.tier,  
       rides: user.rides,  
       ryda_points: user.ryda_points,
-      nin: user.nin,
-      ninFront: user.ninFront,
-      ninBack: user.ninBack,
-      homeAddress: user.homeAddress,
-      isVerified: user.isVerified,
-      isVehicleVerified: user.isVehicleVerified,
+      nin: (user as any).nin,
+      ninFront: (user as any).ninFront,
+      ninBack: (user as any).ninBack,
+      homeAddress: (user as any).homeAddress,
+      isVerified: (user as any).isVerified,
+      isVehicleVerified: (user as any).isVehicleVerified,
       vehicles: user.vehicles,
       avatar: user.avatar
     },  
