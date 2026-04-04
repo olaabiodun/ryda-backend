@@ -106,7 +106,15 @@ if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are re
       role: user.role,   
       tier: user.tier,   
       rides: user.rides,   
-      ryda_points: user.ryda_points   
+      ryda_points: user.ryda_points,
+      nin: user.nin,
+      ninFront: user.ninFront,
+      ninBack: user.ninBack,
+      homeAddress: user.homeAddress,
+      isVerified: user.isVerified,
+      isVehicleVerified: user.isVehicleVerified,
+      vehicles: user.vehicles,
+      avatar: user.avatar
     },   
     token   
   });  
@@ -156,7 +164,15 @@ if (!first_name || !last_name || !email || !phone) {
       role: user.role,   
       tier: user.tier,   
       rides: user.rides,   
-      ryda_points: user.ryda_points   
+      ryda_points: user.ryda_points,
+      nin: user.nin,
+      ninFront: user.ninFront,
+      ninBack: user.ninBack,
+      homeAddress: user.homeAddress,
+      isVerified: user.isVerified,
+      isVehicleVerified: user.isVehicleVerified,
+      vehicles: user.vehicles,
+      avatar: user.avatar
     },   
     token   
   });  
@@ -305,7 +321,7 @@ try {
 const userId = req.user.id;
 const user = await prisma.user.findUnique({
 where: { id: userId },
-select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true }
+select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true, nin: true, ninFront: true, ninBack: true, homeAddress: true, isVerified: true, isVehicleVerified: true }
 });
 
 if (!user) {  
@@ -411,7 +427,15 @@ if (req.body.token) {
       role: user.role,  
       tier: user.tier,  
       rides: user.rides,  
-      ryda_points: user.ryda_points  
+      ryda_points: user.ryda_points,
+      nin: user.nin,
+      ninFront: user.ninFront,
+      ninBack: user.ninBack,
+      homeAddress: user.homeAddress,
+      isVerified: user.isVerified,
+      isVehicleVerified: user.isVehicleVerified,
+      vehicles: user.vehicles,
+      avatar: user.avatar
     },  
     token  
   });  
@@ -514,9 +538,9 @@ async updateProfile(req: Request, res: Response) {
 try {
 // @ts-ignore
 const userId = req.user.id;
-const { first_name, last_name, email, isOnline, isPinRequired, avatar, lastLocationLat, lastLocationLng, phone, emailCode } = req.body;
-
-const currentUser = await prisma.user.findUnique({ where: { id: userId } });  
+  const { first_name, last_name, email, isOnline, isPinRequired, avatar, lastLocationLat, lastLocationLng, phone, emailCode, nin, ninFront, ninBack, homeAddress } = req.body;
+  
+  const currentUser = await prisma.user.findUnique({ where: { id: userId } });  
   if (!currentUser) return res.status(404).json({ message: 'User not found' });  
 
   // 1. Prevent phone number change unless it's missing or a Google placeholder  
@@ -533,6 +557,12 @@ const currentUser = await prisma.user.findUnique({ where: { id: userId } });
   if (isPinRequired !== undefined) updates.isPinRequired = isPinRequired;  
   if (lastLocationLat !== undefined) updates.lastLocationLat = lastLocationLat;  
   if (lastLocationLng !== undefined) updates.lastLocationLng = lastLocationLng;  
+  
+  // Verification Fields
+  if (nin) updates.nin = nin;
+  if (ninFront) updates.ninFront = ninFront;
+  if (ninBack) updates.ninBack = ninBack;
+  if (homeAddress) updates.homeAddress = homeAddress;
 
   if (email && email !== currentUser.email) {  
     if (!emailCode) {  
