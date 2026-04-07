@@ -143,6 +143,55 @@ class WalletController {
       res.status(500).json({ message: 'Internal server error' });
     }
   }
+
+  async withdraw(req: Request, res: Response) {
+    try {
+      // @ts-ignore
+      const userId = req.user.id;
+      const { amount, bankName, accountNumber } = req.body;
+
+      if (!amount || amount <= 0 || !bankName || !accountNumber) {
+        return res.status(400).json({ message: 'Invalid withdrawal data' });
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user || user.walletBalance < amount) {
+        return res.status(400).json({ message: 'Insufficient balance to withdraw' });
+      }
+
+      const updatedUser = await prisma.$transaction(async (tx) => {
+        const u = await tx.user.update({
+          where: { id: userId },
+          data: { walletBalance: { decrement: amount } }
+        });
+
+        await tx.transaction.create({
+          data: {
+            userId,
+            type: 'WITHDRAW',
+            amount,
+            label: `Pending Withdrawal to ${bankName} (${accountNumber})`
+          }
+        });
+
+        await tx.notification.create({
+          data: {
+            userId,
+            title: 'Withdrawal Processing 🏦',
+            message: `Your request to withdraw ₦${amount.toLocaleString()} is being processed.`,
+            type: 'WALLET'
+          }
+        });
+
+        return u;
+      });
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error('Withdrawal error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
 }
 
 export default new WalletController();

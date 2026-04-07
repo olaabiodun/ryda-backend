@@ -189,6 +189,10 @@ try {
 const userId = req.user.id;
 const { amount } = req.body;
 
+if (!amount || amount <= 0) {
+  return res.status(400).json({ message: 'Invalid top-up amount' });
+}
+
 const user = await prisma.user.update({  
     where: { id: userId },  
     data: {  
@@ -218,6 +222,10 @@ try {
 const userId = req.user.id;
 const { amount, recipientPhone } = req.body;
 
+if (!amount || amount <= 0) {
+  return res.status(400).json({ message: 'Invalid transfer amount' });
+}
+
 const sender = await prisma.user.findUnique({ where: { id: userId } });  
   if (!sender || sender.walletBalance < amount) {  
     return res.status(400).json({ message: 'Insufficient balance' });  
@@ -227,6 +235,10 @@ const sender = await prisma.user.findUnique({ where: { id: userId } });
   if (!recipient) {  
     return res.status(404).json({ message: 'Recipient not found' });  
   }  
+
+  if (sender.id === recipient.id) {
+    return res.status(400).json({ message: 'Cannot transfer money to yourself' });
+  }
 
   await prisma.$transaction([  
     prisma.user.update({  
@@ -270,7 +282,11 @@ async withdraw(req: Request, res: Response) {
 try {
 // @ts-ignore
 const userId = req.user.id;
-const { amount } = req.body;
+const { amount, bankName, accountNumber } = req.body;
+
+if (!amount || amount <= 0) {
+  return res.status(400).json({ message: 'Invalid withdrawal amount' });
+}
 
 const user = await prisma.user.findUnique({ where: { id: userId } });  
   if (!user || user.walletBalance < amount) {  
@@ -285,7 +301,7 @@ const user = await prisma.user.findUnique({ where: { id: userId } });
         create: {  
           type: 'WITHDRAW',  
           amount: -amount,  
-          label: 'Bank Withdrawal'  
+          label: bankName && accountNumber ? `Pending Withdrawal: ${bankName} (${accountNumber})` : 'Bank Withdrawal'  
         }  
       }  
     }  
