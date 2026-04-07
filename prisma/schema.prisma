@@ -157,3 +157,15 @@ model Notification {
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
 }
+
+model RideSettings {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  type            String   @unique // lite | eco | pool | premium | xl | business
+  label           String
+  baseFare        Float
+  perKm           Float
+  perMin          Float
+  minFare         Float
+  peakMultiplier  Float
+  updatedAt       DateTime @updatedAt
+}

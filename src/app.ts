@@ -8,6 +8,7 @@ import rewardsRoutes from './routes/rewards.routes';
 import notificationRoutes from './routes/notification.routes';
 import walletRoutes from './routes/wallet.routes';
 import adminRoutes from './routes/admin.routes';
+import settingsRoutes from './routes/settings';
 
 const app: Express = express();
 
@@ -23,6 +24,7 @@ app.use('/api/rewards', rewardsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.get('/', (req, res) => {
   res.send('Ryda Backend is running 🚀');
