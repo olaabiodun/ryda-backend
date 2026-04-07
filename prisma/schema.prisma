@@ -95,8 +95,11 @@ model Trip {
   petFriendly       Boolean       @default(false)
   silentRide        Boolean       @default(false)
   scheduledTime     DateTime?
+  promoCode         String?
+  promoDiscount     Float?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+
   messages          ChatMessage[]
   driver            User?         @relation("DriverTrips", fields: [driverId], references: [id])
   passenger         User          @relation("PassengerTrips", fields: [passengerId], references: [id])
@@ -172,3 +175,16 @@ model RideSettings {
   peakMultiplier  Float
   updatedAt       DateTime @updatedAt
 }
+
+model PromoCode {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  code        String   @unique
+  discount    Float    // percentage discount (e.g. 0.15 for 15%)
+  maxUses     Int?     // null for unlimited
+  usedCount   Int      @default(0)
+  expiryDate  DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+

@@ -10,25 +10,42 @@ class TripController {
       const { 
         origin, destination, rideType, 
         distance = 4, paymentMethod = 'wallet',
-        petFriendly = false, silentRide = false, scheduledTime = null
+        petFriendly = false, silentRide = false, scheduledTime = null,
+        promoCode = null
       } = req.body;
+
 
       // Verify passenger balance before creating request
       const passenger = await prisma.user.findUnique({ where: { id: passengerId } });
       console.log(`[DEBUG] Passenger ${passengerId} isPinRequired: ${passenger?.isPinRequired}`);
-      const calculatedFare = await calculateFare({
+      let calculatedFare = await calculateFare({
           rideType: (rideType as any) || 'eco',
           distanceKm: distance // frontend should now pass km
       });
 
-      // Temporary Bypass for user sanity - always let the trip proceed for now
-      // if (passenger && passenger.walletBalance < calculatedFare) {
-      //    return res.status(400).json({ message: 'Insufficient wallet balance' });
-      // }
+      let promoDiscountVal = 0;
+      if (promoCode) {
+        const promo = await (prisma as any).promoCode.findUnique({
+          where: { code: promoCode.toUpperCase() },
+        });
 
-      const trip = await prisma.trip.create({
+        if (promo && promo.isActive && (!promo.expiryDate || new Date(promo.expiryDate) > new Date()) && (promo.maxUses === null || promo.usedCount < promo.maxUses)) {
+           promoDiscountVal = calculatedFare * promo.discount;
+           calculatedFare = Math.max(0, calculatedFare - promoDiscountVal);
+           
+           // Increment use count
+           await (prisma as any).promoCode.update({
+             where: { id: promo.id },
+             data: { usedCount: { increment: 1 } }
+           });
+        }
+      }
+
+
+      const trip = await (prisma as any).trip.create({
         data: {
           passengerId,
+
           originAddress: origin.address,
           originLat: origin.lat,
           originLng: origin.lng,
@@ -42,9 +59,12 @@ class TripController {
           isPinRequired: passenger?.isPinRequired ?? true,
           petFriendly,
           silentRide,
-          scheduledTime: scheduledTime ? new Date(scheduledTime) : null
+          scheduledTime: scheduledTime ? new Date(scheduledTime) : null,
+          promoCode: promoCode ? promoCode.toUpperCase() : null,
+          promoDiscount: promoDiscountVal
         }
       });
+
 
       res.status(201).json(trip);
     } catch (error) {

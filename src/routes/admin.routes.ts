@@ -3,6 +3,8 @@ import authMiddleware from '../middlewares/auth.middleware';
 import adminMiddleware from '../middlewares/admin.middleware';
 import adminController from '../controllers/admin.controller';
 import { getRideSettings, updateRideSetting, initializeSettings } from '../controllers/settings.controller';
+import * as promoController from '../controllers/promo.controller';
+
 
 const router = Router();
 
@@ -23,5 +25,12 @@ router.get('/chat-conversations', adminController.getChatConversations);
 router.get('/settings', getRideSettings);
 router.put('/settings/:id', updateRideSetting);
 router.post('/settings/initialize', initializeSettings);
+
+// Promo Code Management
+router.get('/promos', promoController.getAllPromos);
+router.post('/promos', promoController.createPromo);
+router.patch('/promos/:id', promoController.updatePromo);
+router.delete('/promos/:id', promoController.deletePromo);
+
 
 export default router;
