@@ -7,7 +7,11 @@ class TripController {
     try {
         // @ts-ignore
       const passengerId = req.user.id;
-      const { origin, destination, rideType, distance = 4, paymentMethod = 'wallet' } = req.body;
+      const { 
+        origin, destination, rideType, 
+        distance = 4, paymentMethod = 'wallet',
+        petFriendly = false, silentRide = false, scheduledTime = null
+      } = req.body;
 
       // Verify passenger balance before creating request
       const passenger = await prisma.user.findUnique({ where: { id: passengerId } });
@@ -35,7 +39,10 @@ class TripController {
           distance: distance,
           status: 'REQUESTED',
           paymentMethod,
-          isPinRequired: passenger?.isPinRequired ?? true
+          isPinRequired: passenger?.isPinRequired ?? true,
+          petFriendly,
+          silentRide,
+          scheduledTime: scheduledTime ? new Date(scheduledTime) : null
         }
       });
 
