@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { calculateFare, RIDE_TYPES } from '../utils/fare';
+import { calculateFare } from '../utils/fare';
 
 class TripController {
   async createTrip(req: Request, res: Response) {
@@ -146,9 +146,22 @@ class TripController {
   async updateTripStatus(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { status, driverId } = req.body;
+      const { status, driverId, pin: providedPin } = req.body;
       
       console.log(`Update status request: ID=${id}, Status=${status}`);
+
+      // Handle PIN verification for starting a ride
+      if (status === 'STARTED') {
+        const trip = await prisma.trip.findUnique({ where: { id } });
+        if (trip && trip.status === 'ARRIVED') {
+            // Note: If isPinRequired is false, we allow it. Otherwise check the PIN.
+            if (trip.isPinRequired) {
+              if (!providedPin || providedPin !== (trip as any).pin) {
+                return res.status(400).json({ message: 'Invalid or missing ride PIN. Please ask the passenger for the correct code.' });
+              }
+            }
+        }
+      }
 
       // Handle trip completion financial deduction
       if (status === 'COMPLETED') {
