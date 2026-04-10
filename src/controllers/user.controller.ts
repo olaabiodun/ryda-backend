@@ -267,30 +267,75 @@ class UserController {
       // @ts-ignore
       const userId = req.user.id;
 
-      // 1. Check if user exists
-      const user = await prisma.user.findUnique({ where: { id: userId } });
+      // 1. Fetch user with trip IDs to be explicit about what is being deleted
+      const user = await prisma.user.findUnique({ 
+        where: { id: userId },
+        include: {
+          tripsAsPassenger: { select: { id: true } },
+          tripsAsDriver: { select: { id: true } }
+        }
+      });
+      
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // 2. Delete associated records
-      // We use deleteMany to clear out related data
-      await prisma.trustedContact.deleteMany({ where: { userId } });
-      await prisma.notification.deleteMany({ where: { userId } });
-      await prisma.pointsHistory.deleteMany({ where: { userId } });
-      await prisma.transaction.deleteMany({ where: { userId } });
+      // 2. Check for active trips
+      const hasActiveTrips = await prisma.trip.findFirst({
+        where: {
+          OR: [
+            { passengerId: userId, status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } },
+            { driverId: userId, status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
+          ]
+        }
+      });
 
-      // Note: We don't delete Trips or ChatMessages to maintain historical data for other users,
-      // but they will point to a non-existent userId or we could optionally anonymize them.
-      // For a hard delete of the account:
-      await prisma.user.delete({ where: { id: userId } });
+      if (hasActiveTrips) {
+        return res.status(400).json({ message: 'Cannot delete account with an active trip. Please complete or cancel your trips first.' });
+      }
 
-      console.log(`👤 User account deleted: ${user.email || user.phone}`);
+      const passengerTripIds = user.tripsAsPassenger.map(t => t.id);
+      const driverTripIds = user.tripsAsDriver.map(t => t.id);
+      const allTripIds = [...passengerTripIds, ...driverTripIds];
+
+      console.log(`🗑️ Starting deletion for user: ${user.email || user.phone}. Found ${allTripIds.length} trips to delete.`);
+
+      // 3. Perform deletion in a sequence
+      await prisma.$transaction(async (tx) => {
+        // a. Delete chat messages for trips
+        if (allTripIds.length > 0) {
+          await tx.chatMessage.deleteMany({ where: { tripId: { in: allTripIds } } });
+          // b. Delete the trips themselves by ID (this is most reliable for relation constraints)
+          await tx.trip.deleteMany({ where: { id: { in: allTripIds } } });
+        }
+
+        // c. Delete other associated records by userId
+        await tx.trustedContact.deleteMany({ where: { userId } });
+        await tx.notification.deleteMany({ where: { userId } });
+        await tx.pointsHistory.deleteMany({ where: { userId } });
+        await tx.transaction.deleteMany({ where: { userId } });
+
+        // d. Delete OTP records
+        if (user.phone) {
+          // Prisma naming for OTP model depends on auto-generation, usually matches schema or camelCase
+          // We'll use try-catch or just be safe. Based on schema 'OTP' usually becomes 'oTP' or 'otp'.
+          try { await (tx as any).oTP.deleteMany({ where: { phone: user.phone } }); } catch (e) {}
+        }
+        if (user.email) {
+          try { await (tx as any).emailOTP.deleteMany({ where: { email: user.email } }); } catch (e) {}
+        }
+
+        // e. Delete the user last
+        await tx.user.delete({ where: { id: userId } });
+      });
+
+      console.log(`✅ User account and all associated data deleted successfully.`);
 
       res.json({ message: 'Account deleted successfully' });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Delete account error ❌', error);
-      res.status(500).json({ message: 'Internal server error' });
+      const errorMessage = error.message || 'Internal server error';
+      res.status(500).json({ message: 'Failed to delete account. ' + errorMessage });
     }
   }
 }
