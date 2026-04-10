@@ -7,6 +7,7 @@ const router = Router();
 // Profile
 router.put('/update-profile', authMiddleware, userController.updateProfile);
 router.post('/request-email-change', authMiddleware, userController.requestEmailChangeOtp);
+router.delete('/delete-account', authMiddleware, userController.deleteAccount);
 
 // Trusted Contacts
 router.get('/contacts', authMiddleware, userController.getContacts);

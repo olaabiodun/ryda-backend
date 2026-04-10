@@ -261,6 +261,38 @@ class UserController {
       res.status(500).json({ message: 'Internal server error' });
     }
   }
+
+  async deleteAccount(req: Request, res: Response) {
+    try {
+      // @ts-ignore
+      const userId = req.user.id;
+
+      // 1. Check if user exists
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // 2. Delete associated records
+      // We use deleteMany to clear out related data
+      await prisma.trustedContact.deleteMany({ where: { userId } });
+      await prisma.notification.deleteMany({ where: { userId } });
+      await prisma.pointsHistory.deleteMany({ where: { userId } });
+      await prisma.transaction.deleteMany({ where: { userId } });
+
+      // Note: We don't delete Trips or ChatMessages to maintain historical data for other users,
+      // but they will point to a non-existent userId or we could optionally anonymize them.
+      // For a hard delete of the account:
+      await prisma.user.delete({ where: { id: userId } });
+
+      console.log(`👤 User account deleted: ${user.email || user.phone}`);
+
+      res.json({ message: 'Account deleted successfully' });
+    } catch (error) {
+      console.error('Delete account error ❌', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
 }
 
 export default new UserController();
