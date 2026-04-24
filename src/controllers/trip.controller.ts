@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { calculateFare } from '../utils/fare';
+import { calculateFare, RIDE_TYPES } from '../utils/fare';
 
 class TripController {
   async createTrip(req: Request, res: Response) {
@@ -18,8 +18,11 @@ class TripController {
       // Verify passenger balance before creating request
       const passenger = await prisma.user.findUnique({ where: { id: passengerId } });
       console.log(`[DEBUG] Passenger ${passengerId} isPinRequired: ${passenger?.isPinRequired}`);
+      
+      const selectedRideType = RIDE_TYPES.includes(rideType) ? rideType : 'eco';
+      
       let calculatedFare = await calculateFare({
-          rideType: (rideType as any) || 'eco',
+          rideType: selectedRideType,
           distanceKm: distance // frontend should now pass km
       });
 

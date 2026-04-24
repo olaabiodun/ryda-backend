@@ -10,6 +10,7 @@ const DEFAULT_TARIFFS: any = {
   xl:       { baseFare: 2800, perKm: 260, perMin: 55, minFare: 3200, peakMultiplier: 1.25 },
   business: { baseFare: 4000, perKm: 380, perMin: 80, minFare: 4500, peakMultiplier: 1.35 },
 };
+export const RIDE_TYPES = Object.keys(DEFAULT_TARIFFS);
 
 export const calculateFare = async (params: { rideType: string; distanceKm: number; durationMins?: number }): Promise<number> => {
   const duration = params.durationMins || (params.distanceKm * 2); // Roughly 2 mins per km if missing
