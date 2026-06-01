@@ -301,16 +301,26 @@ class TripController {
       // Generate PIN ONLY if ride is being accepted for the first time AND pin is required
       const tripToUpdate = await prisma.trip.findUnique({ where: { id } });
       
-      if (status === 'ACCEPTED' && driverId) {
-        const driver = await prisma.user.findUnique({ where: { id: driverId as string } });
-        const debt = driver?.walletBalance || 0;
-        const isCash = (tripToUpdate as any)?.paymentMethod?.toLowerCase() === 'cash';
-        
-        if (debt < -5000) {
-          return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept rides.' });
+      if (!tripToUpdate) {
+        return res.status(404).json({ message: 'Trip not found.' });
+      }
+
+      if (status === 'ACCEPTED') {
+        if (tripToUpdate.status !== 'REQUESTED' || tripToUpdate.driverId) {
+          return res.status(400).json({ message: 'This ride request has already been accepted by another driver.' });
         }
-        if (isCash && debt < -2000) {
-          return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept more cash rides.' });
+
+        if (driverId) {
+          const driver = await prisma.user.findUnique({ where: { id: driverId as string } });
+          const debt = driver?.walletBalance || 0;
+          const isCash = (tripToUpdate as any)?.paymentMethod?.toLowerCase() === 'cash';
+          
+          if (debt < -5000) {
+            return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept rides.' });
+          }
+          if (isCash && debt < -2000) {
+            return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept more cash rides.' });
+          }
         }
       }
 
@@ -331,9 +341,14 @@ class TripController {
 
       // Notify passenger and trip room of status change (include full trip data)
       const io = req.app.get('io');
-      if (io && trip.passengerId) {
-        io.to(trip.passengerId).emit('status_updated', trip);
-        io.to(trip.id).emit('status_updated', trip);
+      if (io) {
+        if (trip.passengerId) {
+          io.to(trip.passengerId).emit('status_updated', trip);
+          io.to(trip.id).emit('status_updated', trip);
+        }
+        if (status === 'ACCEPTED') {
+          io.to('drivers').emit('trip_accepted_by_other', { tripId: trip.id });
+        }
       }
 
       res.json(trip);

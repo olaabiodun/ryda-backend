@@ -86,6 +86,18 @@ export const configureTripSockets = (io: Server) => {
       const { tripId, driverId } = data;
 
       try {
+        const existingTrip = await prisma.trip.findUnique({ where: { id: tripId } });
+        if (!existingTrip) {
+          socket.emit('error', { message: 'Trip not found.' });
+          return;
+        }
+
+        // Check if the trip is already accepted by someone else
+        if (existingTrip.driverId && existingTrip.driverId !== driverId) {
+          socket.emit('trip_already_accepted', { tripId });
+          return;
+        }
+
         const pin = Math.floor(1000 + Math.random() * 9000).toString();
         const trip = await prisma.trip.update({
           where: { id: tripId },
@@ -96,6 +108,10 @@ export const configureTripSockets = (io: Server) => {
         // Notify passenger via both trip room and personal room
         io.to(tripId).emit('trip_accepted', trip);
         io.to(trip.passengerId).emit('trip_accepted', trip);
+
+        // Also broadcast to other drivers that this trip is no longer available!
+        io.to('drivers').emit('trip_accepted_by_other', { tripId });
+
         console.log(`Trip ${tripId} accepted by driver ${driverId}`);
       } catch (error) {
         console.error('Accept trip error', error);
