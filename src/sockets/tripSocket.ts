@@ -98,6 +98,14 @@ export const configureTripSockets = (io: Server) => {
           return;
         }
 
+        const driver = await prisma.user.findUnique({ where: { id: driverId } });
+        const balance = driver?.walletBalance || 0;
+        const fare = existingTrip.fare || 0;
+        if (balance < fare) {
+          socket.emit('error', { message: 'Insufficient balance: Please fund your account to accept this ride.' });
+          return;
+        }
+
         const pin = Math.floor(1000 + Math.random() * 9000).toString();
         const trip = await prisma.trip.update({
           where: { id: tripId },

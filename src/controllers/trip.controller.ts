@@ -313,11 +313,16 @@ class TripController {
         if (driverId) {
           const driver = await prisma.user.findUnique({ where: { id: driverId as string } });
           const debt = driver?.walletBalance || 0;
-          const isCash = (tripToUpdate as any)?.paymentMethod?.toLowerCase() === 'cash';
+          const fare = tripToUpdate.fare || 0;
+
+          if (debt < fare) {
+            return res.status(403).json({ message: 'Insufficient balance: Please fund your account to accept this ride.' });
+          }
           
           if (debt < -5000) {
             return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept rides.' });
           }
+          const isCash = (tripToUpdate as any)?.paymentMethod?.toLowerCase() === 'cash';
           if (isCash && debt < -2000) {
             return res.status(403).json({ message: 'Blocked: Please settle your platform debt to accept more cash rides.' });
           }
