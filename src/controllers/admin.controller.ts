@@ -219,6 +219,9 @@ class AdminController {
         include: {
           _count: {
             select: { tripsAsPassenger: true, tripsAsDriver: true }
+          },
+          partner: {
+            select: { id: true, name: true, partnerCode: true }
           }
         }
       });
@@ -339,6 +342,83 @@ class AdminController {
     }
   }
 
+  async getPartner(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const partner = await prisma.partner.findUnique({
+        where: { id },
+        include: {
+          drivers: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              email: true,
+              phone: true,
+              rating: true,
+              isOnline: true,
+              isVerified: true,
+              createdAt: true,
+              tripsAsDriver: {
+                where: { status: 'COMPLETED' },
+                select: { fare: true }
+              }
+            },
+            orderBy: { createdAt: 'desc' }
+          }
+        }
+      });
+
+      if (!partner) {
+        return res.status(404).json({ message: 'Partner not found' });
+      }
+
+      let totalCommission = 0;
+      const driversFormatted = partner.drivers.map(d => {
+        const totalEarnings = d.tripsAsDriver.reduce((s, t) => s + t.fare, 0);
+        d.tripsAsDriver.forEach(t => {
+          if (partner.feeType === 'percentage') {
+            totalCommission += t.fare * partner.feeValue;
+          } else {
+            totalCommission += Math.min(t.fare, partner.feeValue);
+          }
+        });
+        return {
+          id: d.id,
+          first_name: d.first_name,
+          last_name: d.last_name,
+          email: d.email,
+          phone: d.phone,
+          rating: d.rating,
+          isOnline: d.isOnline,
+          isVerified: d.isVerified,
+          createdAt: d.createdAt,
+          totalRides: d.tripsAsDriver.length,
+          totalEarnings: Number(totalEarnings.toFixed(2))
+        };
+      });
+
+      res.json({
+        id: partner.id,
+        name: partner.name,
+        email: partner.email,
+        partnerCode: partner.partnerCode,
+        isApproved: partner.isApproved,
+        feeType: partner.feeType,
+        feeValue: partner.feeValue,
+        platformFeeType: partner.platformFeeType,
+        platformFeeValue: partner.platformFeeValue,
+        createdAt: partner.createdAt,
+        totalCommission: Number(totalCommission.toFixed(2)),
+        drivers: driversFormatted
+      });
+    } catch (error) {
+      console.error('Admin Get Partner Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
   async createPartner(req: Request, res: Response) {
     try {
       const { name, email, password, feeType, feeValue, partnerCode } = req.body;
@@ -402,13 +482,15 @@ class AdminController {
   async updatePartner(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { name, email, password, feeType, feeValue, partnerCode, isApproved } = req.body;
+      const { name, email, password, feeType, feeValue, partnerCode, isApproved, platformFeeType, platformFeeValue } = req.body;
 
       const updates: any = {};
       if (name) updates.name = name;
       if (email) updates.email = email.toLowerCase();
       if (feeType) updates.feeType = feeType;
       if (feeValue !== undefined) updates.feeValue = Number(feeValue);
+      if (platformFeeType) updates.platformFeeType = platformFeeType;
+      if (platformFeeValue !== undefined) updates.platformFeeValue = Number(platformFeeValue);
       if (partnerCode) updates.partnerCode = partnerCode;
       if (isApproved !== undefined) updates.isApproved = isApproved;
 
@@ -429,7 +511,9 @@ class AdminController {
         partnerCode: partner.partnerCode,
         isApproved: partner.isApproved,
         feeType: partner.feeType,
-        feeValue: partner.feeValue
+        feeValue: partner.feeValue,
+        platformFeeType: partner.platformFeeType,
+        platformFeeValue: partner.platformFeeValue
       });
     } catch (error) {
       console.error('Admin Update Partner Error:', error);
@@ -462,6 +546,71 @@ class AdminController {
     }
   }
 
+  async resetPartnerPassword(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { password } = req.body;
+
+      if (!password || password.length < 6) {
+        return res.status(400).json({ message: 'Password must be at least 6 characters' });
+      }
+
+      const bcrypt = require('bcryptjs');
+      const hashed = await bcrypt.hash(password, 10);
+
+      await prisma.partner.update({
+        where: { id },
+        data: { password: hashed }
+      });
+
+      res.json({ message: 'Password reset successfully' });
+    } catch (error) {
+      console.error('Admin Reset Partner Password Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async updatePartnerPlatformFee(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { platformFeeType, platformFeeValue } = req.body;
+
+      if (platformFeeType && !['percentage', 'flat'].includes(platformFeeType)) {
+        return res.status(400).json({ message: 'Invalid platform fee type. Must be percentage or flat.' });
+      }
+
+      if (platformFeeValue !== undefined && (typeof platformFeeValue !== 'number' || platformFeeValue < 0)) {
+        return res.status(400).json({ message: 'Invalid platform fee value. Must be a positive number.' });
+      }
+
+      if (platformFeeType === 'percentage' && platformFeeValue > 1) {
+        return res.status(400).json({ message: 'Percentage platform fee must be between 0.0 and 1.0 (e.g. 0.02 for 2%)' });
+      }
+
+      const updates: any = {};
+      if (platformFeeType) updates.platformFeeType = platformFeeType;
+      if (platformFeeValue !== undefined) updates.platformFeeValue = platformFeeValue;
+
+      const partner = await prisma.partner.update({
+        where: { id },
+        data: updates
+      });
+
+      res.json({
+        message: 'Platform fee updated successfully',
+        partner: {
+          id: partner.id,
+          name: partner.name,
+          platformFeeType: partner.platformFeeType,
+          platformFeeValue: partner.platformFeeValue
+        }
+      });
+    } catch (error) {
+      console.error('Admin Update Platform Fee Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
   async deletePartner(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -478,6 +627,73 @@ class AdminController {
       res.json({ message: 'Partner deleted successfully' });
     } catch (error) {
       console.error('Admin Delete Partner Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  // ── Send Push Notification ──
+  async sendNotification(req: Request, res: Response) {
+    try {
+      const { title, body, target, screen } = req.body;
+      // target: 'ALL' | 'DRIVER' | 'PASSENGER'
+
+      if (!title || !body) {
+        return res.status(400).json({ message: 'Title and body are required' });
+      }
+
+      const where: any = { pushToken: { not: null } };
+      if (target === 'DRIVER') where.role = 'DRIVER';
+      else if (target === 'PASSENGER') where.role = 'PASSENGER';
+
+      const users = await prisma.user.findMany({
+        where,
+        select: { id: true, pushToken: true }
+      });
+
+      const tokens = users.map(u => u.pushToken).filter(Boolean) as string[];
+
+      if (tokens.length === 0) {
+        return res.status(404).json({ message: 'No users with push tokens found' });
+      }
+
+      // Expo push API accepts up to 100 per request
+      const chunks: string[][] = [];
+      for (let i = 0; i < tokens.length; i += 100) {
+        chunks.push(tokens.slice(i, i + 100));
+      }
+
+      const results = await Promise.allSettled(
+        chunks.map(chunk =>
+          fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Encoding': 'gzip, deflate' },
+            body: JSON.stringify(
+              chunk.map(token => ({
+                to: token,
+                title,
+                body,
+                data: screen ? { screen } : {},
+                sound: 'default',
+                priority: 'high',
+              }))
+            )
+          }).then(r => r.json())
+        )
+      );
+
+      // Also save as in-app notifications
+      await prisma.notification.createMany({
+        data: users.map(u => ({
+          userId: u.id,
+          title,
+          message: body,
+          type: 'INFO',
+        }))
+      });
+
+      res.json({ message: `Notification sent to ${tokens.length} device(s)`, results });
+    } catch (error) {
+      console.error('Send Notification Error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }

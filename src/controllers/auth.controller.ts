@@ -746,6 +746,24 @@ async checkPartnerCode(req: Request, res: Response) {
     res.status(500).json({ message: 'Internal server error' });
   }
 }
+  async savePushToken(req: Request, res: Response) {
+    try {
+      // @ts-ignore
+      const userId = req.user.id;
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ message: 'Token is required' });
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { pushToken: token }
+      });
+
+      res.json({ message: 'Push token saved' });
+    } catch (error) {
+      console.error('Save push token error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
 }
 
 export default new AuthController();

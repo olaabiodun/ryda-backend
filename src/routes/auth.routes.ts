@@ -15,6 +15,7 @@ router.get('/transactions', authMiddleware, authController.getTransactions);
 router.post('/google', authController.googleAuth);
 router.post('/request-email-change', authMiddleware, authController.requestEmailChangeOtp);
 router.patch('/profile', authMiddleware, authController.updateProfile);
+router.post('/push-token', authMiddleware, authController.savePushToken);
 
 // Partner auth routes
 router.post('/partner/signup', authController.registerPartner);

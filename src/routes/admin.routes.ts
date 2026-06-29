@@ -34,10 +34,15 @@ router.delete('/promos/:id', promoController.deletePromo);
 
 // Partner Management (Admin-only)
 router.get('/partners', adminController.getPartners);
+router.get('/partners/:id', adminController.getPartner);
 router.post('/partners', adminController.createPartner);
 router.patch('/partners/:id', adminController.updatePartner);
 router.patch('/partners/:id/approve', adminController.approvePartner);
+router.patch('/partners/:id/platform-fee', adminController.updatePartnerPlatformFee);
+router.post('/partners/:id/reset-password', adminController.resetPartnerPassword);
 router.delete('/partners/:id', adminController.deletePartner);
 
+// Push Notifications
+router.post('/notifications/send', adminController.sendNotification);
 
 export default router;
