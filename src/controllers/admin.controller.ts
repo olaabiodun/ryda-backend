@@ -307,6 +307,180 @@ class AdminController {
       res.status(500).json({ message: 'Internal server error' });
     }
   }
+
+  // ── Partner Management ──
+  async getPartners(req: Request, res: Response) {
+    try {
+      const partners = await prisma.partner.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: { drivers: true }
+          }
+        }
+      });
+
+      const formattedPartners = partners.map(p => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        partnerCode: p.partnerCode,
+        isApproved: p.isApproved,
+        feeType: p.feeType,
+        feeValue: p.feeValue,
+        createdAt: p.createdAt,
+        driverCount: p._count.drivers
+      }));
+
+      res.json(formattedPartners);
+    } catch (error) {
+      console.error('Admin Get Partners Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async createPartner(req: Request, res: Response) {
+    try {
+      const { name, email, password, feeType, feeValue, partnerCode } = req.body;
+
+      if (!name || !email || !password) {
+        return res.status(400).json({ message: 'Name, email, and password are required' });
+      }
+
+      const existing = await prisma.partner.findUnique({ where: { email: email.toLowerCase() } });
+      if (existing) {
+        return res.status(400).json({ message: 'Email already in use' });
+      }
+
+      let code = partnerCode;
+      if (code) {
+        const codeExist = await prisma.partner.findUnique({ where: { partnerCode: code } });
+        if (codeExist) {
+          return res.status(400).json({ message: 'Partner Code already in use' });
+        }
+      } else {
+        let isCodeUnique = false;
+        while (!isCodeUnique) {
+          const rand = Math.floor(1000 + Math.random() * 9000).toString();
+          code = `PART-${rand}`;
+          const existingCode = await prisma.partner.findUnique({ where: { partnerCode: code } });
+          if (!existingCode) isCodeUnique = true;
+        }
+      }
+
+      const bcrypt = require('bcryptjs');
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const partner = await prisma.partner.create({
+        data: {
+          name,
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          partnerCode: code,
+          isApproved: true,
+          feeType: feeType || 'percentage',
+          feeValue: feeValue !== undefined ? Number(feeValue) : 0.10
+        }
+      });
+
+      res.status(201).json({
+        id: partner.id,
+        name: partner.name,
+        email: partner.email,
+        partnerCode: partner.partnerCode,
+        isApproved: partner.isApproved,
+        feeType: partner.feeType,
+        feeValue: partner.feeValue,
+        createdAt: partner.createdAt
+      });
+    } catch (error) {
+      console.error('Admin Create Partner Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async updatePartner(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { name, email, password, feeType, feeValue, partnerCode, isApproved } = req.body;
+
+      const updates: any = {};
+      if (name) updates.name = name;
+      if (email) updates.email = email.toLowerCase();
+      if (feeType) updates.feeType = feeType;
+      if (feeValue !== undefined) updates.feeValue = Number(feeValue);
+      if (partnerCode) updates.partnerCode = partnerCode;
+      if (isApproved !== undefined) updates.isApproved = isApproved;
+
+      if (password) {
+        const bcrypt = require('bcryptjs');
+        updates.password = await bcrypt.hash(password, 10);
+      }
+
+      const partner = await prisma.partner.update({
+        where: { id },
+        data: updates
+      });
+
+      res.json({
+        id: partner.id,
+        name: partner.name,
+        email: partner.email,
+        partnerCode: partner.partnerCode,
+        isApproved: partner.isApproved,
+        feeType: partner.feeType,
+        feeValue: partner.feeValue
+      });
+    } catch (error) {
+      console.error('Admin Update Partner Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async approvePartner(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const partner = await prisma.partner.update({
+        where: { id },
+        data: { isApproved: true }
+      });
+
+      res.json({
+        message: 'Partner approved successfully',
+        partner: {
+          id: partner.id,
+          name: partner.name,
+          email: partner.email,
+          partnerCode: partner.partnerCode,
+          isApproved: partner.isApproved
+        }
+      });
+    } catch (error) {
+      console.error('Admin Approve Partner Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  async deletePartner(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      await prisma.user.updateMany({
+        where: { partnerId: id },
+        data: { partnerId: null }
+      });
+
+      await prisma.partner.delete({
+        where: { id }
+      });
+
+      res.json({ message: 'Partner deleted successfully' });
+    } catch (error) {
+      console.error('Admin Delete Partner Error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
 }
 
 export default new AdminController();

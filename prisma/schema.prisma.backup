@@ -54,23 +54,6 @@ model User {
   contacts         TrustedContact[]
   pointsHistory    PointsHistory[]
   notifications    Notification[]
-
-  partnerId        String?          @db.ObjectId
-  partner          Partner?         @relation("PartnerDrivers", fields: [partnerId], references: [id])
-}
-
-model Partner {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  email         String   @unique
-  password      String
-  partnerCode   String   @unique
-  isApproved    Boolean  @default(false)
-  feeType       String   @default("percentage") // percentage | flat
-  feeValue      Float    @default(0.10)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  drivers       User[]   @relation("PartnerDrivers")
 }
 
 model OTP {
@@ -153,12 +136,11 @@ model ChatMessage {
   createdAt  DateTime @default(now())
   trip       Trip?    @relation(fields: [tripId], references: [id])
 }
-
 model PointsHistory {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   userId    String   @db.ObjectId
   label     String
-  points    String
+  points    String   // e.g. "+42" or "-800"
   date      DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
 }
@@ -171,7 +153,6 @@ model RedeemableReward {
   icon      String
   active    Boolean  @default(true)
 }
-
 model Notification {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   userId    String   @db.ObjectId
@@ -185,7 +166,7 @@ model Notification {
 
 model RideSettings {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  type            String   @unique
+  type            String   @unique // lite | eco | pool | premium | xl | business
   label           String
   baseFare        Float
   perKm           Float
@@ -198,8 +179,8 @@ model RideSettings {
 model PromoCode {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   code        String   @unique
-  discount    Float
-  maxUses     Int?
+  discount    Float    // percentage discount (e.g. 0.15 for 15%)
+  maxUses     Int?     // null for unlimited
   usedCount   Int      @default(0)
   expiryDate  DateTime?
   isActive    Boolean  @default(true)

@@ -16,4 +16,9 @@ router.post('/google', authController.googleAuth);
 router.post('/request-email-change', authMiddleware, authController.requestEmailChangeOtp);
 router.patch('/profile', authMiddleware, authController.updateProfile);
 
+// Partner auth routes
+router.post('/partner/signup', authController.registerPartner);
+router.post('/partner/login', authController.loginPartner);
+router.get('/partner/check/:code', authController.checkPartnerCode);
+
 export default router;

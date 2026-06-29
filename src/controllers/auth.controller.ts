@@ -127,7 +127,7 @@ if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are re
 
 async register(req: Request, res: Response) {
 try {
-const { first_name, last_name, email, phone, role, requestedRole } = req.body;
+const { first_name, last_name, email, phone, role, requestedRole, partnerCode } = req.body;
 
 if (!first_name || !last_name || !email || !phone) {  
     return res.status(400).json({ message: 'All fields including phone number are required' });  
@@ -141,13 +141,25 @@ if (!first_name || !last_name || !email || !phone) {
     return res.status(400).json({ message: 'Email or phone already in use' });  
   }  
 
+  let partnerId = undefined;
+  if (partnerCode) {
+    const partner = await prisma.partner.findFirst({
+      where: { partnerCode, isApproved: true }
+    });
+    if (!partner) {
+      return res.status(400).json({ message: 'Invalid or unapproved Partner Code' });
+    }
+    partnerId = partner.id;
+  }
+
   const user = await prisma.user.create({  
     data: {  
       first_name,  
       last_name,  
       email: email.toLowerCase(),  
       phone,  
-      role: requestedRole || role || 'PASSENGER'  
+      role: requestedRole || role || 'PASSENGER',
+      partnerId
     }  
   });  
 
@@ -172,7 +184,8 @@ if (!first_name || !last_name || !email || !phone) {
       isVerified: (user as any).isVerified,
       isVehicleVerified: (user as any).isVehicleVerified,
       vehicles: user.vehicles,
-      avatar: user.avatar
+      avatar: user.avatar,
+      partnerId: (user as any).partnerId
     },   
     token   
   });  
@@ -337,7 +350,7 @@ try {
 const userId = req.user.id;
 const user = await prisma.user.findUnique({
 where: { id: userId },
-select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true, nin: true, ninFront: true, ninBack: true, homeAddress: true, isVerified: true, isVehicleVerified: true } as any
+select: { id: true, first_name: true, middle_name: true, last_name: true, email: true, phone: true, role: true, rating: true, walletBalance: true, avatar: true, tier: true, rides: true, ryda_points: true, vehicles: true, isOnline: true, isPinRequired: true, nin: true, ninFront: true, ninBack: true, homeAddress: true, isVerified: true, isVehicleVerified: true, partnerId: true } as any
 });
 
 if (!user) {  
@@ -613,6 +626,125 @@ const userId = req.user.id;
   res.status(500).json({ message: 'Internal server error' });  
 }
 
+}
+
+async registerPartner(req: Request, res: Response) {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    const existingPartner = await prisma.partner.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+
+    if (existingPartner) {
+      return res.status(400).json({ message: 'Email is already in use by another partner' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    let isCodeUnique = false;
+    let partnerCode = '';
+    while (!isCodeUnique) {
+      const rand = Math.floor(1000 + Math.random() * 9000).toString();
+      partnerCode = `PART-${rand}`;
+      const existing = await prisma.partner.findUnique({ where: { partnerCode } });
+      if (!existing) isCodeUnique = true;
+    }
+
+    const partner = await prisma.partner.create({
+      data: {
+        name,
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        partnerCode,
+        isApproved: false
+      }
+    });
+
+    res.status(201).json({
+      message: 'Partner registration successful. Awaiting admin approval.',
+      partner: {
+        id: partner.id,
+        name: partner.name,
+        email: partner.email,
+        partnerCode: partner.partnerCode,
+        isApproved: partner.isApproved
+      }
+    });
+  } catch (error) {
+    console.error('Register partner error ❌', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+async loginPartner(req: Request, res: Response) {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    const partner = await prisma.partner.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+
+    if (!partner) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, partner.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    const token = jwt.sign({ id: partner.id, role: 'PARTNER' }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      partner: {
+        id: partner.id,
+        name: partner.name,
+        email: partner.email,
+        partnerCode: partner.partnerCode,
+        isApproved: partner.isApproved
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Login partner error ❌', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+async checkPartnerCode(req: Request, res: Response) {
+  try {
+    const { code } = req.params;
+    if (!code) {
+      return res.status(400).json({ message: 'Partner code is required' });
+    }
+
+    const partner = await prisma.partner.findUnique({
+      where: { partnerCode: code }
+    });
+
+    if (!partner) {
+      return res.status(404).json({ message: 'Invalid partner code' });
+    }
+
+    if (!partner.isApproved) {
+      return res.status(400).json({ message: 'Partner is currently pending approval' });
+    }
+
+    res.json({
+      name: partner.name,
+      partnerCode: partner.partnerCode
+    });
+  } catch (error) {
+    console.error('Check partner code error ❌', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 }
 }
 

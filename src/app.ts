@@ -10,6 +10,7 @@ import walletRoutes from './routes/wallet.routes';
 import adminRoutes from './routes/admin.routes';
 import settingsRoutes from './routes/settings';
 import promoRoutes from './routes/promo.routes';
+import partnerRoutes from './routes/partner.routes';
 
 
 const app: Express = express();
@@ -29,6 +30,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/promo', promoRoutes);
+app.use('/api/partner', partnerRoutes);
 
 
 app.get('/', (req, res) => {

@@ -32,5 +32,12 @@ router.post('/promos', promoController.createPromo);
 router.patch('/promos/:id', promoController.updatePromo);
 router.delete('/promos/:id', promoController.deletePromo);
 
+// Partner Management (Admin-only)
+router.get('/partners', adminController.getPartners);
+router.post('/partners', adminController.createPartner);
+router.patch('/partners/:id', adminController.updatePartner);
+router.patch('/partners/:id/approve', adminController.approvePartner);
+router.delete('/partners/:id', adminController.deletePartner);
+
 
 export default router;
