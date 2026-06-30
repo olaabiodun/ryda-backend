@@ -68,6 +68,22 @@ class TripController {
         }
       });
 
+      // Broadcast new trip request directly to drivers socket room
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          const fullTrip = await prisma.trip.findUnique({
+            where: { id: trip.id },
+            include: { passenger: true }
+          });
+          if (fullTrip) {
+            io.to('drivers').emit('new_trip_request', fullTrip);
+            console.log(`[SOCKET] Broadcasted new trip request #${trip.id} to drivers`);
+          }
+        }
+      } catch (socketErr) {
+        console.error('Failed to broadcast new trip request via socket:', socketErr);
+      }
 
       res.status(201).json(trip);
     } catch (error) {
