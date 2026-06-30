@@ -307,7 +307,7 @@ class TripController {
 
       if (status === 'ACCEPTED') {
         if (tripToUpdate.status !== 'REQUESTED' || tripToUpdate.driverId) {
-          return res.status(400).json({ message: 'This ride request has already been accepted by another driver.' });
+          return res.status(400).json({ message: 'driver already exist' });
         }
 
         if (driverId) {

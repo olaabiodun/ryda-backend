@@ -94,6 +94,7 @@ export const configureTripSockets = (io: Server) => {
 
         // Check if the trip is already accepted by someone else
         if (existingTrip.driverId && existingTrip.driverId !== driverId) {
+          socket.emit('error', { message: 'driver already exist' });
           socket.emit('trip_already_accepted', { tripId });
           return;
         }
